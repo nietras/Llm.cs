@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Diagnostics;
+using System.IO;
 using Microsoft.Win32.SafeHandles;
 
 namespace nietras.LargeLanguageModel;
@@ -14,6 +16,8 @@ There will be other versions of this code that specialize it and make it fast.
 */
 public static class Llm
 {
+    static readonly Action<string> Log = t => { Console.WriteLine(t); Trace.WriteLine(t); };
+
     // ----------------------------------------------------------------------------
     // all the individual layers' forward and backward passes
     // B = batch_size, T = sequence_length, C = channels, V = vocab_size
@@ -101,7 +105,7 @@ public static class Llm
                 }
                 v = v / C;
                 // calculate the rstd (reciprocal standard deviation)
-                float s = 1.0f / sqrtf(v + eps);
+                float s = 1.0f / MathF.Sqrt(v + eps);
                 // seek to the output position in output[b,t,:]
                 float* out_bt = output + b * T * C + t * C;
                 for (int i = 0; i < C; i++)
@@ -204,9 +208,8 @@ public static class Llm
         // but that doesn't afford an efficient parallelization strategy
 
         // backward into inp first, parallelize over B,T
-        int b;
 #pragma omp parallel for collapse(2)
-        for (b = 0; b < B; b++)
+        for (int b = 0; b < B; b++)
         {
             for (int t = 0; t < T; t++)
             {
@@ -224,9 +227,8 @@ public static class Llm
             }
         }
         // backward into weight/bias, parallelize over output channels OC
-        int o;
 #pragma omp parallel for
-        for (o = 0; o < OC; o++)
+        for (int o = 0; o < OC; o++)
         {
             for (int b = 0; b < B; b++)
             {
@@ -299,7 +301,7 @@ public static class Llm
                     float expsum = 0.0f;
                     for (int t2 = 0; t2 <= t; t2++)
                     {
-                        float expv = expf(preatt_bth[t2] - maxval);
+                        float expv = MathF.Exp(preatt_bth[t2] - maxval);
                         expsum += expv;
                         att_bth[t2] = expv;
                     }
@@ -647,7 +649,7 @@ public static class Llm
         public ParameterTensors parameters;
         public fixed long param_sizes[NUM_PARAMETER_TENSORS];
         public float* params_memory;
-        public int num_parameters;
+        public long num_parameters;
         // gradients of the weights
         public ParameterTensors grads;
         public float* grads_memory;
@@ -658,7 +660,7 @@ public static class Llm
         public ActivationTensors acts;
         public fixed long act_sizes[NUM_ACTIVATION_TENSORS];
         public float* acts_memory;
-        public int num_activations;
+        public long num_activations;
         // gradients of the activations
         public ActivationTensors grads_acts;
         public float* grads_acts_memory;
@@ -670,16 +672,16 @@ public static class Llm
         public float mean_loss; // after a forward pass with targets, will be populated with the mean loss
     }
 
-    public unsafe static void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path)
+    public unsafe static void gpt2_build_from_checkpoint(GPT2* model, string checkpoint_path)
     {
 
         // read in model from a checkpoint file
         SafeFileHandle model_file = fopen(checkpoint_path, "rb");
-        if (model_file == null) { printf("Error opening model file\n"); exit(1); }
+        if (model_file == null) { Log($"Error opening model file"); exit(1); }
         Span<int> model_header = stackalloc int[256];
         fread(model_header, sizeof(int), 256, model_file);
-        if (model_header[0] != 20240326) { printf("Bad magic model file"); exit(1); }
-        if (model_header[1] != 1) { printf("Bad version in model file"); exit(1); }
+        if (model_header[0] != 20240326) { Log($"Bad magic model file"); exit(1); }
+        if (model_header[1] != 1) { Log($"Bad version in model file"); exit(1); }
 
         // read in hyperparameters
         int maxT, V, L, NH, C;
@@ -688,12 +690,12 @@ public static class Llm
         model->config.num_layers = L = model_header[4];
         model->config.num_heads = NH = model_header[5];
         model->config.channels = C = model_header[6];
-        printf("[GPT-2]\n");
-        printf("max_seq_len: %d\n", maxT);
-        printf("vocab_size: %d\n", V);
-        printf("num_layers: %d\n", L);
-        printf("num_heads: %d\n", NH);
-        printf("channels: %d\n", C);
+        Log("[GPT-2]");
+        Log($"max_seq_len: {maxT}");
+        Log($"vocab_size: {V}");
+        Log($"num_layers: {L}");
+        Log($"num_heads: {NH}");
+        Log($"channels: {C}");
 
         // allocate space for all the parameters and read them in
         model->param_sizes[0] = V * C; // wte
@@ -719,7 +721,7 @@ public static class Llm
         {
             num_parameters += model->param_sizes[i];
         }
-        printf("num_parameters: %zu\n", num_parameters);
+        Log($"num_parameters: {num_parameters}");
         model->num_parameters = num_parameters;
 
         // read in all the parameters from file
@@ -747,7 +749,7 @@ public static class Llm
         // ensure the model was initialized or error output
         if (model->params_memory == null)
         {
-            printf("Error: model was not initialized properly.\n");
+            Log("Error: model was not initialized properly.");
             exit(1);
         }
 
@@ -792,7 +794,7 @@ public static class Llm
             {
                 num_activations += model->act_sizes[i];
             }
-            printf("num_activations: %zu\n", num_activations);
+            Log($"num_activations: {num_activations}");
             model->num_activations = num_activations;
             model->acts_memory = malloc_and_point_activations(&model->acts, model->act_sizes);
             // also create memory for caching inputs and targets
@@ -805,8 +807,8 @@ public static class Llm
             // in principle, we could re-allocate a larger chunk of memory, for now we just error output
             if (B > model->batch_size || T > model->seq_len)
             {
-                printf("Error: batch size or sequence length is inadequately large\n");
-                printf("Model: B=%d T=%d, Desired: B=%d T=%d\n", model->batch_size, model->seq_len, B, T);
+                Log("Error: batch size or sequence length is inadequately large");
+                Log($"Model: B={model->batch_size} T={model->seq_len}, Desired: B={B} T={T}");
                 exit(1);
             }
         }
@@ -906,7 +908,7 @@ public static class Llm
         // double check we forwarded previously, with targets
         if (model->mean_loss == -1.0f)
         {
-            printf("Error: must forward with targets before backward\n");
+            Log("Error: must forward with targets before backward");
             exit(1);
         }
 
@@ -1033,13 +1035,13 @@ public static class Llm
             // update the second moment (RMSprop)
             float v = beta2 * model->v_memory[i] + (1.0f - beta2) * grad * grad;
             // bias-correct both moments
-            float m_hat = m / (1.0f - powf(beta1, t));
-            float v_hat = v / (1.0f - powf(beta2, t));
+            float m_hat = m / (1.0f - MathF.Pow(beta1, t));
+            float v_hat = v / (1.0f - MathF.Pow(beta2, t));
 
             // update
             model->m_memory[i] = m;
             model->v_memory[i] = v;
-            model->params_memory[i] -= learning_rate * (m_hat / (sqrtf(v_hat) + eps) + weight_decay * param);
+            model->params_memory[i] -= learning_rate * (m_hat / (MathF.Sqrt(v_hat) + eps) + weight_decay * param);
         }
     }
 
@@ -1062,21 +1064,21 @@ public static class Llm
     public unsafe struct DataLoader
     {
         // hyperparameters
-        int B; // batch size
-        int T; // sequence length
-               // input handling and its state
-        SafeFileHandle tokens_file;
-        long file_size;
-        long current_position;
+        public int B; // batch size
+        public int T; // sequence length
+                      // input handling and its state
+        public SafeFileHandle tokens_file;
+        public long file_size;
+        public long current_position;
         // output memory
-        int* batch;
-        int* inputs;
-        int* targets;
+        public int* batch;
+        public int* inputs;
+        public int* targets;
         // convenience variables
-        int num_batches;
+        public long num_batches;
     }
 
-    public unsafe static void dataloader_init(DataLoader* loader, char* filename, int B, int T)
+    public unsafe static void dataloader_init(DataLoader* loader, string filename, int B, int T)
     {
         loader->B = B;
         loader->T = T;
@@ -1085,7 +1087,7 @@ public static class Llm
         loader->tokens_file = fopen(filename, "rb");
         if (loader->tokens_file == null)
         {
-            printf("Error opening tokens file\n");
+            Log($"Error opening tokens file");
             exit(1);
         }
 
@@ -1095,7 +1097,7 @@ public static class Llm
         fseek(loader->tokens_file, 0, SEEK_SET);
         if (loader->file_size < (B * T + 1) * sizeof(int))
         {
-            printf("Error: file size is too small for the batch size and sequence length\n");
+            Log($"Error: file size is too small for the batch size and sequence length");
             exit(1);
         }
         loader->current_position = 0; // start at the beginning
@@ -1179,30 +1181,31 @@ public static class Llm
         gpt2_build_from_checkpoint(&model, "gpt2_124M.bin");
 
         // build the DataLoaders from tokens files. for now use tiny_shakespeare if available, else tiny_stories
-        char* tiny_stories_train = "data/TinyStories_train.bin";
-        char* tiny_stories_val = "data/TinyStories_val.bin";
-        char* tiny_shakespeare_train = "data/tiny_shakespeare_train.bin";
-        char* tiny_shakespeare_val = "data/tiny_shakespeare_val.bin";
-        char* train_tokens = access(tiny_shakespeare_train, F_OK) != -1 ? tiny_shakespeare_train : tiny_stories_train;
-        char* val_tokens = access(tiny_shakespeare_val, F_OK) != -1 ? tiny_shakespeare_val : tiny_stories_val;
+        var tiny_stories_train = "data/TinyStories_train.bin";
+        var tiny_stories_val = "data/TinyStories_val.bin";
+        var tiny_shakespeare_train = "data/tiny_shakespeare_train.bin";
+        var tiny_shakespeare_val = "data/tiny_shakespeare_val.bin";
+        var train_tokens = File.Exists(tiny_shakespeare_train) ? tiny_shakespeare_train : tiny_stories_train;
+        var val_tokens = File.Exists(tiny_shakespeare_val) ? tiny_shakespeare_val : tiny_stories_val;
         int B = 4; // batch size 4 (i.e. 4 independent token sequences will be trained on)
         int T = 64; // sequence length 64 (i.e. each sequence is 64 tokens long). must be <= maxT, which is 1024 for GPT-2
         DataLoader train_loader;
         dataloader_init(&train_loader, train_tokens, B, T);
-        printf("train dataset num_batches: %d\n", train_loader.num_batches);
+        Log($"train dataset num_batches: {train_loader.num_batches}");
+
         DataLoader val_loader;
         dataloader_init(&val_loader, val_tokens, B, T);
-        printf("val dataset num_batches: %d\n", val_loader.num_batches);
+        Log($"val dataset num_batches: {val_loader.num_batches}");
         int val_num_batches = 10;
 
         // some memory for generating samples from the model
         ulong rng_state = 1337;
         // during inference step we'll generate sequences of this many tokens
         const int gen_max_length = 64;
-        Span<int> gen_tokens = stackalloc int[gen_max_length];
+        int* gen_tokens = stackalloc int[gen_max_length];
 
         // train
-        long start, end;
+        var stopwatch = new Stopwatch();
         for (int step = 0; step <= 20; step++)
         {
 
@@ -1218,7 +1221,7 @@ public static class Llm
                     val_loss += model.mean_loss;
                 }
                 val_loss /= val_num_batches;
-                printf("val loss %f\n", val_loss);
+                Log($"val loss {val_loss}");
             }
 
             // once in a while do model inference to print generated text
@@ -1237,30 +1240,28 @@ public static class Llm
                     int next_token = sample_mult(probs, model.config.vocab_size, coin);
                     gen_tokens[t] = next_token;
                 }
-                printf("generated: ");
+                Log("generated: ");
                 for (int t = 0; t < gen_max_length; t++)
                 {
-                    printf("%d ", gen_tokens[t]);
+                    Log($"{gen_tokens[t]} ");
                 }
-                printf("\n");
+                Log("");
             }
 
             // do a training step
-            clock_gettime(CLOCK_MONOTONIC, &start);
+            stopwatch.Restart();
             dataloader_next_batch(&train_loader);
             gpt2_forward(&model, train_loader.inputs, train_loader.targets, B, T);
             gpt2_zero_grad(&model);
             gpt2_backward(&model);
             gpt2_update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, step + 1);
-            clock_gettime(CLOCK_MONOTONIC, &end);
-            double time_elapsed_s = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-            printf("step %d: train loss %f (took %f ms)\n", step, model.mean_loss, time_elapsed_s * 1000);
+            double time_elapsed_ms = stopwatch.Elapsed.TotalMilliseconds;
+            Log($"step {step}: train loss {model.mean_loss} (took {time_elapsed_ms} ms)");
         }
 
         // free
         dataloader_free(&train_loader);
         dataloader_free(&val_loader);
         gpt2_free(&model);
-        return 0;
     }
 }
