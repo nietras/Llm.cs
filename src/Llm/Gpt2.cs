@@ -803,10 +803,10 @@ public static partial class Gpt2
         }
 
         // cache the inputs/targets
-        memcpy(model->inputs, inputs, B * T * sizeof(int));
+        memcpy(model->inputs, inputs, B * T);
         if (targets != null)
         {
-            memcpy(model->targets, targets, B * T * sizeof(int));
+            memcpy(model->targets, targets, B * T);
         }
 
         // forward pass
