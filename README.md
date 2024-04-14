@@ -1,5 +1,5 @@
 ﻿# llm.cs - C# port of @karpathy [llm.c](https://github.com/karpathy/llm.c)
-![.NET](https://img.shields.io/badge/net7.0%20net8.0-5C2D91?logo=.NET&labelColor=gray)
+![.NET](https://img.shields.io/badge/net8.0-5C2D91?logo=.NET&labelColor=gray)
 ![C#](https://img.shields.io/badge/12.0-239120?logo=csharp&logoColor=white&labelColor=gray)
 ![Lines of code](https://tokei.rs/b1/github/nietras/Llm?category=code)
 [![Build Status](https://github.com/nietras/Llm/actions/workflows/dotnet.yml/badge.svg?branch=main)](https://github.com/nietras/Llm/actions/workflows/dotnet.yml)
