@@ -2,6 +2,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -1235,26 +1236,29 @@ public static class Llm
         while (totalReadCount < count)
         {
             var countToRead = (int)Math.Min(buffer.Length, count - totalReadCount);
-            var span = MemoryMarshal.Cast<T, byte>(buffer.Slice(0, countToRead));
+            var bufferToRead = buffer.Slice(0, countToRead);
+            var span = MemoryMarshal.Cast<T, byte>(bufferToRead);
             file.ReadExactly(span);
+            bufferToRead.CopyTo(new Span<T>(values + totalReadCount, countToRead));
             totalReadCount += countToRead;
         }
     }
 
     // ----------------------------------------------------------------------------
     // main training loop
-    static unsafe void Main()
+    public static unsafe void Main()
     {
-
+        var location = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+        var dataDirectory = Path.Combine(location!, "../../../");
         // build the GPT-2 model from a checkpoint
         GPT2 model;
-        gpt2_build_from_checkpoint(&model, "gpt2_124M.bin");
+        gpt2_build_from_checkpoint(&model, dataDirectory + "gpt2_124M.bin");
 
         // build the DataLoaders from tokens files. for now use tiny_shakespeare if available, else tiny_stories
-        var tiny_stories_train = "data/TinyStories_train.bin";
-        var tiny_stories_val = "data/TinyStories_val.bin";
-        var tiny_shakespeare_train = "data/tiny_shakespeare_train.bin";
-        var tiny_shakespeare_val = "data/tiny_shakespeare_val.bin";
+        var tiny_stories_train = dataDirectory + "TinyStories_train.bin";
+        var tiny_stories_val = dataDirectory + "TinyStories_val.bin";
+        var tiny_shakespeare_train = dataDirectory + "tiny_shakespeare_train.bin";
+        var tiny_shakespeare_val = dataDirectory + "tiny_shakespeare_val.bin";
         var train_tokens = File.Exists(tiny_shakespeare_train) ? tiny_shakespeare_train : tiny_stories_train;
         var val_tokens = File.Exists(tiny_shakespeare_val) ? tiny_shakespeare_val : tiny_stories_val;
         int B = 4; // batch size 4 (i.e. 4 independent token sequences will be trained on)

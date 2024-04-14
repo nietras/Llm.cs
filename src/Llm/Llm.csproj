@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <RootNamespace>nietras.LargeLanguageModel</RootNamespace>
+    <OutputType>Exe</OutputType>
     <IsPackable>true</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsTrimmable>true</IsTrimmable>
