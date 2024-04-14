@@ -1,5 +1,5 @@
 ﻿using System;
-using System.Reflection;
+using Microsoft.Win32.SafeHandles;
 
 namespace nietras.LargeLanguageModel;
 
@@ -18,11 +18,11 @@ public static class Llm
     // all the individual layers' forward and backward passes
     // B = batch_size, T = sequence_length, C = channels, V = vocab_size
 
-    public unsafe void encoder_forward(float* out,
+    public unsafe static void encoder_forward(float* output,
                        int* inp, float* wte, float* wpe,
                        int B, int T, int C)
     {
-        // out is (B,T,C). At each position (b,t), a C-dimensional vector summarizing token & position
+        // output is (B,T,C). At each position (b,t), a C-dimensional vector summarizing token & position
         // inp is (B,T) of integers, holding the token ids at each (b,t) position
         // wte is (V,C) of token embeddings, short for "weight token embeddings"
         // wpe is (maxT,C) of position embeddings, short for "weight positional embedding"
@@ -30,15 +30,15 @@ public static class Llm
         {
             for (int t = 0; t < T; t++)
             {
-                // seek to the output position in out[b,t,:]
-                float* out_bt = out +b * T * C + t * C;
+                // seek to the output position in output[b,t,:]
+                float* out_bt = output + b * T * C + t * C;
                 // get the index of the token at inp[b, t]
                 int ix = inp[b * T + t];
                 // seek to the position in wte corresponding to the token
                 float* wte_ix = wte + ix * C;
                 // seek to the position in wpe corresponding to the position
                 float* wpe_t = wpe + t * C;
-                // add the two vectors and store the result in out[b,t,:]
+                // add the two vectors and store the result in output[b,t,:]
                 for (int i = 0; i < C; i++)
                 {
                     out_bt[i] = wte_ix[i] + wpe_t[i];
@@ -47,7 +47,7 @@ public static class Llm
         }
     }
 
-    public unsafe void encoder_backward(float* dwte, float* dwpe,
+    public unsafe static void encoder_backward(float* dwte, float* dwpe,
                           float* dout, int* inp,
                           int B, int T, int C)
     {
@@ -69,12 +69,12 @@ public static class Llm
         }
     }
 
-    public unsafe void layernorm_forward(float* out, float* mean, float* rstd,
+    public unsafe static void layernorm_forward(float* output, float* mean, float* rstd,
                            float* inp, float* weight, float* bias,
                            int B, int T, int C)
     {
         // reference: https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html
-        // both inp and out are (B,T,C) of the activations
+        // both inp and output are (B,T,C) of the activations
         // mean and rstd are (B,T) buffers, to be used later in backward pass
         // at each position (b,t) of the input, the C-dimensional vector
         // of activations gets normalized, then scaled and shifted
@@ -102,8 +102,8 @@ public static class Llm
                 v = v / C;
                 // calculate the rstd (reciprocal standard deviation)
                 float s = 1.0f / sqrtf(v + eps);
-                // seek to the output position in out[b,t,:]
-                float* out_bt = out +b * T * C + t * C;
+                // seek to the output position in output[b,t,:]
+                float* out_bt = output + b * T * C + t * C;
                 for (int i = 0; i < C; i++)
                 {
                     float n = (s * (x[i] - m)); // normalize
@@ -117,7 +117,7 @@ public static class Llm
         }
     }
 
-    public unsafe void layernorm_backward(float* dinp, float* dweight, float* dbias,
+    public unsafe static void layernorm_backward(float* dinp, float* dweight, float* dbias,
                             float* dout, float* inp, float* weight, float* mean, float* rstd,
                             int B, int T, int C)
     {
@@ -165,25 +165,25 @@ public static class Llm
         }
     }
 
-    public unsafe void matmul_forward(float* out,
+    public unsafe static void matmul_forward(float* output,
                         float* inp, float* weight, float* bias,
                         int B, int T, int C, int OC)
     {
         // most of the running time is spent here and in matmul_backward
         // OC is short for "output channels"
         // inp is (B,T,C), weight is (OC, C), bias is (OC)
-        // out will be (B,T,OC)
+        // output will be (B,T,OC)
         int b;
 #pragma omp parallel for collapse(2)
         for (b = 0; b < B; b++)
         {
             for (int t = 0; t < T; t++)
             {
-                float* out_bt = out +b * T * OC + t * OC;
+                float* out_bt = output + b * T * OC + t * OC;
                 float* inp_bt = inp + b * T * C + t * C;
                 for (int o = 0; o < OC; o++)
                 {
-                    float val = (bias != NULL) ? bias[o] : 0.0f;
+                    float val = (bias != null) ? bias[o] : 0.0f;
                     float* wrow = weight + o * C;
                     for (int i = 0; i < C; i++)
                     {
@@ -195,7 +195,7 @@ public static class Llm
         }
     }
 
-    public unsafe void matmul_backward(float* dinp, float* dweight, float* dbias,
+    public unsafe static void matmul_backward(float* dinp, float* dweight, float* dbias,
                          float* dout, float* inp, float* weight,
                          int B, int T, int C, int OC)
     {
@@ -236,7 +236,7 @@ public static class Llm
                     float* inp_bt = inp + b * T * C + t * C;
                     float* dwrow = dweight + o * C;
                     float d = dout_bt[o];
-                    if (dbias != NULL) { dbias[o] += d; }
+                    if (dbias != null) { dbias[o] += d; }
                     for (int i = 0; i < C; i++)
                     {
                         dwrow[i] += inp_bt[i] * d;
@@ -246,7 +246,7 @@ public static class Llm
         }
     }
 
-    public unsafe void attention_forward(float* out, float* preatt, float* att,
+    public unsafe static void attention_forward(float* output, float* preatt, float* att,
                            float* inp,
                            int B, int T, int C, int NH)
     {
@@ -259,7 +259,7 @@ public static class Llm
         // (and of course, no layer mixes information across batch)
         int C3 = C * 3;
         int hs = C / NH; // head size
-        float scale = 1.0 / sqrtf(hs);
+        float scale = 1.0f / MathF.Sqrt(hs);
 
         int b;
 #pragma omp parallel for collapse(3)
@@ -321,7 +321,7 @@ public static class Llm
                     }
 
                     // pass 4: accumulate weighted values into the output of attention
-                    float* out_bth = out +b * T * C + t * C + h * hs;
+                    float* out_bth = output + b * T * C + t * C + h * hs;
                     for (int i = 0; i < hs; i++) { out_bth[i] = 0.0f; }
                     for (int t2 = 0; t2 <= t; t2++)
                     {
@@ -337,7 +337,7 @@ public static class Llm
         }
     }
 
-    public unsafe void attention_backward(float* dinp, float* dpreatt, float* datt,
+    public unsafe static void attention_backward(float* dinp, float* dpreatt, float* datt,
                             float* dout, float* inp, float* att,
                             int B, int T, int C, int NH)
     {
@@ -346,7 +346,7 @@ public static class Llm
         // dout is (B, T, C)
         int C3 = C * 3;
         int hs = C / NH; // head size
-        float scale = 1.0 / sqrtf(hs);
+        float scale = 1.0f / MathF.Sqrt(hs);
 
         for (int b = 0; b < B; b++)
         {
@@ -408,41 +408,41 @@ public static class Llm
     }
 
     static readonly float GELU_SCALING_FACTOR = MathF.Sqrt(2.0f / MathF.PI);
-    public unsafe void gelu_forward(float* out, float* inp, int N)
+    public unsafe static void gelu_forward(float* output, float* inp, int N)
     {
         // (approximate) GeLU elementwise non-linearity in the MLP block of Transformer
         for (int i = 0; i < N; i++)
         {
             float x = inp[i];
             float cube = 0.044715f * x * x * x;
-        out[i] = 0.5f * x * (1.0f + tanhf(GELU_SCALING_FACTOR * (x + cube)));
+            output[i] = 0.5f * x * (1.0f + MathF.Tanh(GELU_SCALING_FACTOR * (x + cube)));
         }
     }
 
-    public unsafe void gelu_backward(float* dinp, float* inp, float* dout, int N)
+    public unsafe static void gelu_backward(float* dinp, float* inp, float* dout, int N)
     {
         for (int i = 0; i < N; i++)
         {
             float x = inp[i];
             float cube = 0.044715f * x * x * x;
             float tanh_arg = GELU_SCALING_FACTOR * (x + cube);
-            float tanh_out = tanhf(tanh_arg);
-            float coshf_out = coshf(tanh_arg);
+            float tanh_out = MathF.Tanh(tanh_arg);
+            float coshf_out = MathF.Cosh(tanh_arg);
             float sech_out = 1.0f / (coshf_out * coshf_out);
             float local_grad = 0.5f * (1.0f + tanh_out) + x * 0.5f * sech_out * GELU_SCALING_FACTOR * (1.0f + 3.0f * 0.044715f * x * x);
             dinp[i] += local_grad * dout[i];
         }
     }
 
-    public unsafe void residual_forward(float* out, float* inp1, float* inp2, int N)
+    public unsafe static void residual_forward(float* output, float* inp1, float* inp2, int N)
     {
         for (int i = 0; i < N; i++)
         {
-        out[i] = inp1[i] + inp2[i];
+            output[i] = inp1[i] + inp2[i];
         }
     }
 
-    public unsafe void residual_backward(float* dinp1, float* dinp2, float* dout, int N)
+    public unsafe static void residual_backward(float* dinp1, float* dinp2, float* dout, int N)
     {
         for (int i = 0; i < N; i++)
         {
@@ -451,7 +451,7 @@ public static class Llm
         }
     }
 
-    public unsafe void softmax_forward(float* probs, float* logits, int B, int T, int V)
+    public unsafe static void softmax_forward(float* probs, float* logits, int B, int T, int V)
     {
         // output: probs are (B,T,V) of the probabilities (sums to 1.0 in each b,t position)
         // input: logits is (B,T,V) of the unnormalized log probabilities
@@ -477,7 +477,7 @@ public static class Llm
                 float sum = 0.0f;
                 for (int i = 0; i < V; i++)
                 {
-                    probs_bt[i] = expf(logits_bt[i] - maxval);
+                    probs_bt[i] = MathF.Exp(logits_bt[i] - maxval);
                     sum += probs_bt[i];
                 }
                 for (int i = 0; i < V; i++)
@@ -488,7 +488,7 @@ public static class Llm
         }
     }
 
-    public unsafe void crossentropy_forward(float* losses,
+    public unsafe static void crossentropy_forward(float* losses,
                               float* probs, int* targets,
                               int B, int T, int V)
     {
@@ -502,12 +502,12 @@ public static class Llm
                 // loss = -log(probs[target])
                 float* probs_bt = probs + b * T * V + t * V;
                 int ix = targets[b * T + t];
-                losses[b * T + t] = -logf(probs_bt[ix]);
+                losses[b * T + t] = -MathF.Log(probs_bt[ix]);
             }
         }
     }
 
-    public unsafe void crossentropy_softmax_backward(float* dlogits,
+    public unsafe static void crossentropy_softmax_backward(float* dlogits,
                                float* dlosses, float* probs, int* targets,
                                int B, int T, int V)
     {
@@ -534,8 +534,9 @@ public static class Llm
     // GPT-2 model definition
 
     // the parameters of the model
-#define NUM_PARAMETER_TENSORS 16
-    typedef struct {
+    const int NUM_PARAMETER_TENSORS = 16;
+    public unsafe struct ParameterTensors
+    {
         float* wte; // (V, C)
         float* wpe; // (maxT, C)
         float* ln1w; // (L, C)
@@ -553,13 +554,12 @@ public static class Llm
         float* lnfw; // (C)
         float* lnfb; // (C)
     }
-    ParameterTensors;
 
-// allocate memory for the parameters and point the individual tensors to the right places
-public unsafe float* malloc_and_point_parameters(ParameterTensors* params, size_t* param_sizes)
+    // allocate memory for the parameters and point the individual tensors to the right places
+    public unsafe static float* malloc_and_point_parameters(ParameterTensors* parameters, nint* param_sizes)
     {
-        size_t num_parameters = 0;
-        for (size_t i = 0; i < NUM_PARAMETER_TENSORS; i++)
+        nint num_parameters = 0;
+        for (nint i = 0; i < NUM_PARAMETER_TENSORS; i++)
         {
             num_parameters += param_sizes[i];
         }
@@ -567,12 +567,12 @@ public unsafe float* malloc_and_point_parameters(ParameterTensors* params, size_
         float* params_memory = (float*)malloc(num_parameters * sizeof(float));
         // assign all the tensors
         float** ptrs[] = {
-        &params->wte, &params->wpe, &params->ln1w, &params->ln1b, &params->qkvw, &params->qkvb,
-        &params->attprojw, &params->attprojb, &params->ln2w, &params->ln2b, &params->fcw, &params->fcb,
-        &params->fcprojw, &params->fcprojb, &params->lnfw, &params->lnfb
+        &parameters->wte, &parameters->wpe, &parameters->ln1w, &parameters->ln1b, &parameters->qkvw, &parameters->qkvb,
+        &parameters->attprojw, &parameters->attprojb, &parameters->ln2w, &parameters->ln2b, &parameters->fcw, &parameters->fcb,
+        &parameters->fcprojw, &parameters->fcprojb, &parameters->lnfw, &parameters->lnfb
     };
         float* params_memory_iterator = params_memory;
-        for (size_t i = 0; i < NUM_PARAMETER_TENSORS; i++)
+        for (nint i = 0; i < NUM_PARAMETER_TENSORS; i++)
         {
             *(ptrs[i]) = params_memory_iterator;
             params_memory_iterator += param_sizes[i];
@@ -580,8 +580,9 @@ public unsafe float* malloc_and_point_parameters(ParameterTensors* params, size_
         return params_memory;
     }
 
-#define NUM_ACTIVATION_TENSORS 23
-    typedef struct {
+    const int NUM_ACTIVATION_TENSORS = 23;
+    public unsafe struct ActivationTensors
+    {
         float* encoded; // (B, T, C)
         float* ln1; // (L, B, T, C)
         float* ln1_mean; // (L, B, T)
@@ -606,12 +607,11 @@ public unsafe float* malloc_and_point_parameters(ParameterTensors* params, size_
         float* probs; // (B, T, V)
         float* losses; // (B, T)
     }
-    ActivationTensors;
 
-public unsafe float* malloc_and_point_activations(ActivationTensors* acts, size_t* act_sizes)
+    public unsafe static float* malloc_and_point_activations(ActivationTensors* acts, nint* act_sizes)
     {
-        size_t num_activations = 0;
-        for (size_t i = 0; i < NUM_ACTIVATION_TENSORS; i++)
+        nint num_activations = 0;
+        for (nint i = 0; i < NUM_ACTIVATION_TENSORS; i++)
         {
             num_activations += act_sizes[i];
         }
@@ -623,7 +623,7 @@ public unsafe float* malloc_and_point_activations(ActivationTensors* acts, size_
         &acts->lnf_mean, &acts->lnf_rstd, &acts->logits, &acts->probs, &acts->losses
     };
         float* acts_memory_iterator = acts_memory;
-        for (size_t i = 0; i < NUM_ACTIVATION_TENSORS; i++)
+        for (nint i = 0; i < NUM_ACTIVATION_TENSORS; i++)
         {
             *(ptrs[i]) = acts_memory_iterator;
             acts_memory_iterator += act_sizes[i];
@@ -631,20 +631,21 @@ public unsafe float* malloc_and_point_activations(ActivationTensors* acts, size_
         return acts_memory;
     }
 
-    typedef struct {
+    public unsafe struct GPT2Config
+    {
         int max_seq_len; // max sequence length, e.g. 1024
         int vocab_size; // vocab size, e.g. 50257
         int num_layers; // number of layers, e.g. 12
         int num_heads; // number of heads in attention, e.g. 12
         int channels; // number of channels, e.g. 768
     }
-    GPT2Config;
 
-typedef struct {
+    public unsafe struct GPT2
+    {
         GPT2Config config;
         // the weights (parameters) of the model, and their sizes
-        ParameterTensors params;
-    size_t param_sizes[NUM_PARAMETER_TENSORS];
+        ParameterTensors parameters;
+        nint param_sizes[NUM_PARAMETER_TENSORS];
         float* params_memory;
         int num_parameters;
         // gradients of the weights
@@ -655,7 +656,7 @@ typedef struct {
         float* v_memory;
         // the activations of the model, and their sizes
         ActivationTensors acts;
-        size_t act_sizes[NUM_ACTIVATION_TENSORS];
+        nint act_sizes[NUM_ACTIVATION_TENSORS];
         float* acts_memory;
         int num_activations;
         // gradients of the activations
@@ -668,14 +669,13 @@ typedef struct {
         int* targets; // the target tokens for the current forward pass
         float mean_loss; // after a forward pass with targets, will be populated with the mean loss
     }
-    GPT2;
 
-public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path)
+    public unsafe static void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path)
     {
 
         // read in model from a checkpoint file
         FILE* model_file = fopen(checkpoint_path, "rb");
-        if (model_file == NULL) { printf("Error opening model file\n"); exit(1); }
+        if (model_file == null) { printf("Error opening model file\n"); exit(1); }
         int model_header[256];
         fread(model_header, sizeof(int), 256, model_file);
         if (model_header[0] != 20240326) { printf("Bad magic model file"); exit(1); }
@@ -714,8 +714,8 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
         model->param_sizes[15] = C; // lnfb
 
         // cound the number of paramaters
-        size_t num_parameters = 0;
-        for (size_t i = 0; i < NUM_PARAMETER_TENSORS; i++)
+        nint num_parameters = 0;
+        for (nint i = 0; i < NUM_PARAMETER_TENSORS; i++)
         {
             num_parameters += model->param_sizes[i];
         }
@@ -723,18 +723,18 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
         model->num_parameters = num_parameters;
 
         // read in all the parameters from file
-        model->params_memory = malloc_and_point_parameters(&model->params, model->param_sizes);
+        model->params_memory = malloc_and_point_parameters(&model->parameters, model->param_sizes);
         fread(model->params_memory, sizeof(float), num_parameters, model_file);
         fclose(model_file);
 
         // other inits
-        model->acts_memory = NULL;
-        model->grads_memory = NULL;
-        model->m_memory = NULL;
-        model->v_memory = NULL;
-        model->grads_acts_memory = NULL;
-        model->inputs = NULL;
-        model->targets = NULL;
+        model->acts_memory = null;
+        model->grads_memory = null;
+        model->m_memory = null;
+        model->v_memory = null;
+        model->grads_acts_memory = null;
+        model->inputs = null;
+        model->targets = null;
         model->batch_size = 0;
         model->seq_len = 0;
         model->mean_loss = -1.0f; // -1.0f will designate no loss
@@ -742,10 +742,10 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
 
     void gpt2_forward(GPT2* model, int* inputs, int* targets, int B, int T)
     {
-        // targets are optional and could be NULL
+        // targets are optional and could be null
 
-        // ensure the model was initialized or error out
-        if (model->params_memory == NULL)
+        // ensure the model was initialized or error output
+        if (model->params_memory == null)
         {
             printf("Error: model was not initialized properly.\n");
             exit(1);
@@ -758,7 +758,7 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
         int C = model->config.channels;
 
         // allocate space for all the activations if needed (done here, lazily)
-        if (model->acts_memory == NULL)
+        if (model->acts_memory == null)
         {
             // record the current B,T as well
             model->batch_size = B;
@@ -787,8 +787,8 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
             model->act_sizes[20] = B * T * V; // logits
             model->act_sizes[21] = B * T * V; // probs
             model->act_sizes[22] = B * T; // losses
-            size_t num_activations = 0;
-            for (size_t i = 0; i < NUM_ACTIVATION_TENSORS; i++)
+            nint num_activations = 0;
+            for (nint i = 0; i < NUM_ACTIVATION_TENSORS; i++)
             {
                 num_activations += model->act_sizes[i];
             }
@@ -802,7 +802,7 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
         else
         {
             // validate B,T is no larger than what was previously allocated
-            // in principle, we could re-allocate a larger chunk of memory, for now we just error out
+            // in principle, we could re-allocate a larger chunk of memory, for now we just error output
             if (B > model->batch_size || T > model->seq_len)
             {
                 printf("Error: batch size or sequence length is inadequately large\n");
@@ -813,34 +813,34 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
 
         // cache the inputs/targets
         memcpy(model->inputs, inputs, B * T * sizeof(int));
-        if (targets != NULL)
+        if (targets != null)
         {
             memcpy(model->targets, targets, B * T * sizeof(int));
         }
 
         // forward pass
-        ParameterTensors params = model->params; // for brevity
+        ParameterTensors parameters = model->parameters; // for brevity
         ActivationTensors acts = model->acts;
         float* residual;
-        encoder_forward(acts.encoded, inputs, params.wte, params.wpe, B, T, C); // encoding goes into residual[0]
+        encoder_forward(acts.encoded, inputs, parameters.wte, parameters.wpe, B, T, C); // encoding goes into residual[0]
         for (int l = 0; l < L; l++)
         {
 
             residual = l == 0 ? acts.encoded : acts.residual3 + (l - 1) * B * T * C;
 
             // get the pointers of the weights for this layer
-            float* l_ln1w = params.ln1w + l * C;
-            float* l_ln1b = params.ln1b + l * C;
-            float* l_qkvw = params.qkvw + l * 3 * C * C;
-            float* l_qkvb = params.qkvb + l * 3 * C;
-            float* l_attprojw = params.attprojw + l * C * C;
-            float* l_attprojb = params.attprojb + l * C;
-            float* l_ln2w = params.ln2w + l * C;
-            float* l_ln2b = params.ln2b + l * C;
-            float* l_fcw = params.fcw + l * 4 * C * C;
-            float* l_fcb = params.fcb + l * 4 * C;
-            float* l_fcprojw = params.fcprojw + l * C * 4 * C;
-            float* l_fcprojb = params.fcprojb + l * C;
+            float* l_ln1w = parameters.ln1w + l * C;
+            float* l_ln1b = parameters.ln1b + l * C;
+            float* l_qkvw = parameters.qkvw + l * 3 * C * C;
+            float* l_qkvb = parameters.qkvb + l * 3 * C;
+            float* l_attprojw = parameters.attprojw + l * C * C;
+            float* l_attprojb = parameters.attprojb + l * C;
+            float* l_ln2w = parameters.ln2w + l * C;
+            float* l_ln2b = parameters.ln2b + l * C;
+            float* l_fcw = parameters.fcw + l * 4 * C * C;
+            float* l_fcb = parameters.fcb + l * 4 * C;
+            float* l_fcprojw = parameters.fcprojw + l * C * 4 * C;
+            float* l_fcprojb = parameters.fcprojb + l * C;
 
             // get the pointers of the activations for this layer
             float* l_ln1 = acts.ln1 + l * B * T * C;
@@ -873,12 +873,12 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
             residual_forward(l_residual3, l_residual2, l_fcproj, B * T * C);
         }
         residual = acts.residual3 + (L - 1) * B * T * C; // last residual is in residual3
-        layernorm_forward(acts.lnf, acts.lnf_mean, acts.lnf_rstd, residual, params.lnfw, params.lnfb, B, T, C);
-        matmul_forward(acts.logits, acts.lnf, params.wte, NULL, B, T, C, V);
+        layernorm_forward(acts.lnf, acts.lnf_mean, acts.lnf_rstd, residual, parameters.lnfw, parameters.lnfb, B, T, C);
+        matmul_forward(acts.logits, acts.lnf, parameters.wte, null, B, T, C, V);
         softmax_forward(acts.probs, acts.logits, B, T, V);
 
         // also forward the cross-entropy loss function if we have the targets
-        if (targets != NULL)
+        if (targets != null)
         {
             crossentropy_forward(model->acts.losses, model->acts.probs, targets, B, T, V);
             // for convenience also evaluate the mean loss
@@ -894,13 +894,13 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
         }
     }
 
-    void gpt2_zero_grad(GPT2* model)
+    static unsafe void gpt2_zero_grad(GPT2* model)
     {
-        if (model->grads_memory != NULL) { memset(model->grads_memory, 0, model->num_parameters * sizeof(float)); }
-        if (model->grads_acts_memory != NULL) { memset(model->grads_acts_memory, 0, model->num_activations * sizeof(float)); }
+        if (model->grads_memory != null) { memset(model->grads_memory, 0, model->num_parameters * sizeof(float)); }
+        if (model->grads_acts_memory != null) { memset(model->grads_acts_memory, 0, model->num_activations * sizeof(float)); }
     }
 
-    void gpt2_backward(GPT2* model)
+    static unsafe void gpt2_backward(GPT2* model)
     {
 
         // double check we forwarded previously, with targets
@@ -911,7 +911,7 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
         }
 
         // lazily allocate the memory for gradients of the weights and activations, if needed
-        if (model->grads_memory == NULL)
+        if (model->grads_memory == null)
         {
             model->grads_memory = malloc_and_point_parameters(&model->grads, model->param_sizes);
             model->grads_acts_memory = malloc_and_point_activations(&model->grads_acts, model->act_sizes);
@@ -927,7 +927,7 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
         int C = model->config.channels;
 
         // backward pass: go in the reverse order of the forward pass, and call backward() functions
-        ParameterTensors params = model->params; // for brevity
+        ParameterTensors parameters = model->parameters; // for brevity
         ParameterTensors grads = model->grads;
         ActivationTensors acts = model->acts;
         ActivationTensors grads_acts = model->grads_acts;
@@ -939,10 +939,10 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
         for (int i = 0; i < B * T; i++) { grads_acts.losses[i] = dloss_mean; }
 
         crossentropy_softmax_backward(grads_acts.logits, grads_acts.losses, acts.probs, model->targets, B, T, V);
-        matmul_backward(grads_acts.lnf, grads.wte, NULL, grads_acts.logits, acts.lnf, params.wte, B, T, C, V);
+        matmul_backward(grads_acts.lnf, grads.wte, null, grads_acts.logits, acts.lnf, parameters.wte, B, T, C, V);
         float* residual = acts.residual3 + (L - 1) * B * T * C; // last layer's residual
         float* dresidual = grads_acts.residual3 + (L - 1) * B * T * C; // write to last layer's residual
-        layernorm_backward(dresidual, grads.lnfw, grads.lnfb, grads_acts.lnf, residual, params.lnfw, acts.lnf_mean, acts.lnf_rstd, B, T, C);
+        layernorm_backward(dresidual, grads.lnfw, grads.lnfb, grads_acts.lnf, residual, parameters.lnfw, acts.lnf_mean, acts.lnf_rstd, B, T, C);
 
         for (int l = L - 1; l >= 0; l--)
         {
@@ -951,12 +951,12 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
             dresidual = l == 0 ? grads_acts.encoded : grads_acts.residual3 + (l - 1) * B * T * C;
 
             // get the pointers of the weights for this layer
-            float* l_ln1w = params.ln1w + l * C;
-            float* l_qkvw = params.qkvw + l * 3 * C * C;
-            float* l_attprojw = params.attprojw + l * C * C;
-            float* l_ln2w = params.ln2w + l * C;
-            float* l_fcw = params.fcw + l * 4 * C * C;
-            float* l_fcprojw = params.fcprojw + l * C * 4 * C;
+            float* l_ln1w = parameters.ln1w + l * C;
+            float* l_qkvw = parameters.qkvw + l * 3 * C * C;
+            float* l_attprojw = parameters.attprojw + l * C * C;
+            float* l_ln2w = parameters.ln2w + l * C;
+            float* l_fcw = parameters.fcw + l * 4 * C * C;
+            float* l_fcprojw = parameters.fcprojw + l * C * 4 * C;
             // get the pointers of the gradients of the weights for this layer
             float* dl_ln1w = grads.ln1w + l * C;
             float* dl_ln1b = grads.ln1b + l * C;
@@ -1012,12 +1012,12 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
         encoder_backward(grads.wte, grads.wpe, grads_acts.encoded, model->inputs, B, T, C);
     }
 
-    void gpt2_update(GPT2* model, float learning_rate, float beta1, float beta2, float eps, float weight_decay, int t)
+    static unsafe void gpt2_update(GPT2* model, float learning_rate, float beta1, float beta2, float eps, float weight_decay, int t)
     {
         // reference: https://pytorch.org/docs/stable/generated/torch.optim.AdamW.html
 
         // lazily allocate the memory for m_memory and v_memory
-        if (model->m_memory == NULL)
+        if (model->m_memory == null)
         {
             model->m_memory = (float*)calloc(model->num_parameters, sizeof(float));
             model->v_memory = (float*)calloc(model->num_parameters, sizeof(float));
@@ -1043,7 +1043,7 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
         }
     }
 
-    void gpt2_free(GPT2* model)
+    static unsafe void gpt2_free(GPT2* model)
     {
         free(model->params_memory);
         free(model->grads_memory);
@@ -1055,19 +1055,17 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
         free(model->targets);
     }
 
-# ifndef TESTING
-    // if we are TESTING (see test_gpt2.c), we'll skip the int main below
-
     // ----------------------------------------------------------------------------
     // data loader lite
     // returns random batches of data from a file of integers
 
-    typedef struct {
+    public unsafe struct DataLoader
+    {
         // hyperparameters
         int B; // batch size
         int T; // sequence length
                // input handling and its state
-        FILE* tokens_file;
+        SafeFileHandle tokens_file;
         long file_size;
         long current_position;
         // output memory
@@ -1077,16 +1075,15 @@ public unsafe void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path
         // convenience variables
         int num_batches;
     }
-    DataLoader;
 
-public unsafe void dataloader_init(DataLoader* loader, char* filename, int B, int T)
+    public unsafe static void dataloader_init(DataLoader* loader, char* filename, int B, int T)
     {
         loader->B = B;
         loader->T = T;
 
         // open the input file for reading
         loader->tokens_file = fopen(filename, "rb");
-        if (loader->tokens_file == NULL)
+        if (loader->tokens_file == null)
         {
             printf("Error opening tokens file\n");
             exit(1);
@@ -1110,12 +1107,12 @@ public unsafe void dataloader_init(DataLoader* loader, char* filename, int B, in
         loader->num_batches = loader->file_size / (B * T * sizeof(int));
     }
 
-    void dataloader_reset(DataLoader* loader)
+    static unsafe void dataloader_reset(DataLoader* loader)
     {
         loader->current_position = 0;
     }
 
-    void dataloader_next_batch(DataLoader* loader)
+    static unsafe void dataloader_next_batch(DataLoader* loader)
     {
         int B = loader->B;
         int T = loader->T;
@@ -1141,22 +1138,22 @@ public unsafe void dataloader_init(DataLoader* loader, char* filename, int B, in
     // sampler
 
     // the GPT-2 end-of-text token id
-#define GPT2_EOT 50256
+    const int GPT2_EOT = 50256;
 
-    unsigned int random_u32(unsigned long long* state)
+    static unsafe uint random_u32(ulong* state)
     {
         // xorshift rng: https://en.wikipedia.org/wiki/Xorshift#xorshift.2A
         *state ^= *state >> 12;
         *state ^= *state << 25;
         *state ^= *state >> 27;
-        return (*state * 0x2545F4914F6CDD1Dull) >> 32;
+        return (uint)((*state * 0x2545F4914F6CDD1Dul) >> 32);
     }
-    float random_f32(unsigned long long* state)
+    static unsafe float random_f32(ulong* state)
     { // random float32 in [0,1)
         return (random_u32(state) >> 8) / 16777216.0f;
     }
 
-    int sample_mult(float* probabilities, int n, float coin)
+    static unsafe int sample_mult(float* probabilities, int n, float coin)
     {
         // sample index from probabilities (they must sum to 1!)
         // coin is a random number in [0, 1), usually from random_f32()
@@ -1174,7 +1171,7 @@ public unsafe void dataloader_init(DataLoader* loader, char* filename, int B, in
 
     // ----------------------------------------------------------------------------
     // main training loop
-    int main()
+    static unsafe void Main()
     {
 
         // build the GPT-2 model from a checkpoint
@@ -1201,7 +1198,7 @@ public unsafe void dataloader_init(DataLoader* loader, char* filename, int B, in
         // some memory for generating samples from the model
         unsigned long long rng_state = 1337;
         // during inference step we'll generate sequences of this many tokens
-#define gen_max_length 64
+        const int gen_max_length = 64;
         int gen_tokens[gen_max_length];
 
     // train
@@ -1231,7 +1228,7 @@ val_loss /= val_num_batches;
         // for each t, we re-compute all activations between 0 and t
         // leaving this alone because you want separate code for inference anyway
         // the inference here is just for sanity checking purposes
-        gpt2_forward(&model, gen_tokens, NULL, 1, t);
+        gpt2_forward(&model, gen_tokens, null, 1, t);
         float* probs = model.acts.probs + (t - 1) * model.config.vocab_size;
         float coin = random_f32(&rng_state);
         int next_token = sample_mult(probs, model.config.vocab_size, coin);
@@ -1263,5 +1260,4 @@ dataloader_free(&val_loader);
 gpt2_free(&model);
 return 0;
 }
-#endif
 }
