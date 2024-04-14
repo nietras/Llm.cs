@@ -1,7 +1,9 @@
 ﻿using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
-using Microsoft.Win32.SafeHandles;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace nietras.LargeLanguageModel;
 
@@ -566,7 +568,7 @@ public static class Llm
             num_parameters += param_sizes[i];
         }
         // malloc all parameters all at once
-        float* params_memory = (float*)malloc(num_parameters * sizeof(float));
+        float* params_memory = malloc<float>(num_parameters);
         // assign all the tensors
         float**[] ptrs = [
         &parameters->wte, &parameters->wpe, &parameters->ln1w, &parameters->ln1b, &parameters->qkvw, &parameters->qkvb,
@@ -617,7 +619,7 @@ public static class Llm
         {
             num_activations += act_sizes[i];
         }
-        float* acts_memory = (float*)malloc(num_activations * sizeof(float));
+        float* acts_memory = malloc<float>(num_activations);
         float**[] ptrs = [
         &acts->encoded, &acts->ln1, &acts->ln1_mean, &acts->ln1_rstd, &acts->qkv, &acts->atty,
         &acts->preatt, &acts->att, &acts->attproj, &acts->residual2, &acts->ln2, &acts->ln2_mean,
@@ -674,14 +676,14 @@ public static class Llm
 
     public unsafe static void gpt2_build_from_checkpoint(GPT2* model, string checkpoint_path)
     {
-
         // read in model from a checkpoint file
-        SafeFileHandle model_file = fopen(checkpoint_path, "rb");
-        if (model_file == null) { Log($"Error opening model file"); exit(1); }
+        using var model_file = File.OpenRead(checkpoint_path);
         Span<int> model_header = stackalloc int[256];
-        fread(model_header, sizeof(int), 256, model_file);
-        if (model_header[0] != 20240326) { Log($"Bad magic model file"); exit(1); }
-        if (model_header[1] != 1) { Log($"Bad version in model file"); exit(1); }
+        // read span from model_file
+        model_file.ReadExactlyUnmanaged(model_header);
+        //fread(model_header, sizeof(int), 256, model_file);
+        if (model_header[0] != 20240326) { throw new InvalidDataException($"Bad magic model file"); }
+        if (model_header[1] != 1) { throw new InvalidDataException($"Bad version in model file"); }
 
         // read in hyperparameters
         int maxT, V, L, NH, C;
@@ -726,8 +728,7 @@ public static class Llm
 
         // read in all the parameters from file
         model->params_memory = malloc_and_point_parameters(&model->parameters, model->param_sizes);
-        fread(model->params_memory, sizeof(float), num_parameters, model_file);
-        fclose(model_file);
+        ReadExactlyUnmanaged(model_file, model->params_memory, num_parameters);
 
         // other inits
         model->acts_memory = null;
@@ -749,8 +750,7 @@ public static class Llm
         // ensure the model was initialized or error output
         if (model->params_memory == null)
         {
-            Log("Error: model was not initialized properly.");
-            exit(1);
+            throw new InvalidOperationException("Error: model was not initialized properly.");
         }
 
         // convenience parameters
@@ -798,8 +798,8 @@ public static class Llm
             model->num_activations = num_activations;
             model->acts_memory = malloc_and_point_activations(&model->acts, model->act_sizes);
             // also create memory for caching inputs and targets
-            model->inputs = (int*)malloc(B * T * sizeof(int));
-            model->targets = (int*)malloc(B * T * sizeof(int)); // might be unused if we never have targets but it's small
+            model->inputs = malloc<int>(B * T);
+            model->targets = malloc<int>(B * T); // might be unused if we never have targets but it's small
         }
         else
         {
@@ -807,9 +807,8 @@ public static class Llm
             // in principle, we could re-allocate a larger chunk of memory, for now we just error output
             if (B > model->batch_size || T > model->seq_len)
             {
-                Log("Error: batch size or sequence length is inadequately large");
-                Log($"Model: B={model->batch_size} T={model->seq_len}, Desired: B={B} T={T}");
-                exit(1);
+                throw new InvalidDataException("Error: batch size or sequence length is inadequately large" +
+                    $"Model: B={model->batch_size} T={model->seq_len}, Desired: B={B} T={T}");
             }
         }
 
@@ -898,8 +897,8 @@ public static class Llm
 
     static unsafe void gpt2_zero_grad(GPT2* model)
     {
-        if (model->grads_memory != null) { memset(model->grads_memory, 0, model->num_parameters * sizeof(float)); }
-        if (model->grads_acts_memory != null) { memset(model->grads_acts_memory, 0, model->num_activations * sizeof(float)); }
+        if (model->grads_memory != null) { memset(model->grads_memory, model->num_parameters); }
+        if (model->grads_acts_memory != null) { memset(model->grads_acts_memory, model->num_activations); }
     }
 
     static unsafe void gpt2_backward(GPT2* model)
@@ -908,8 +907,7 @@ public static class Llm
         // double check we forwarded previously, with targets
         if (model->mean_loss == -1.0f)
         {
-            Log("Error: must forward with targets before backward");
-            exit(1);
+            throw new InvalidOperationException("Error: must forward with targets before backward");
         }
 
         // lazily allocate the memory for gradients of the weights and activations, if needed
@@ -1021,8 +1019,8 @@ public static class Llm
         // lazily allocate the memory for m_memory and v_memory
         if (model->m_memory == null)
         {
-            model->m_memory = (float*)calloc(model->num_parameters, sizeof(float));
-            model->v_memory = (float*)calloc(model->num_parameters, sizeof(float));
+            model->m_memory = calloc<float>(model->num_parameters);
+            model->v_memory = calloc<float>(model->num_parameters);
         }
 
         for (int i = 0; i < model->num_parameters; i++)
@@ -1061,13 +1059,13 @@ public static class Llm
     // data loader lite
     // returns random batches of data from a file of integers
 
-    public unsafe struct DataLoader
+    public unsafe class DataLoader : IDisposable
     {
         // hyperparameters
         public int B; // batch size
         public int T; // sequence length
                       // input handling and its state
-        public SafeFileHandle tokens_file;
+        public FileStream tokens_file;
         public long file_size;
         public long current_position;
         // output memory
@@ -1076,65 +1074,113 @@ public static class Llm
         public int* targets;
         // convenience variables
         public long num_batches;
-    }
+        bool _disposedValue;
 
-    public unsafe static void dataloader_init(DataLoader* loader, string filename, int B, int T)
-    {
-        loader->B = B;
-        loader->T = T;
-
-        // open the input file for reading
-        loader->tokens_file = fopen(filename, "rb");
-        if (loader->tokens_file == null)
+        public DataLoader(string filename, int B, int T)
         {
-            Log($"Error opening tokens file");
-            exit(1);
+            this.B = B;
+            this.T = T;
+
+            // open the input file for reading
+            this.tokens_file = File.OpenRead(filename);
+            this.file_size = tokens_file.Length;
+            if (this.file_size < (B * T + 1) * sizeof(int))
+            {
+                throw new InvalidDataException($"Error: file size is too small for the batch size and sequence length");
+            }
+
+            // allocate space for B*T + 1 integers to store the inputs and targets
+            this.batch = malloc<int>((B * T + 1));
+            this.inputs = this.batch;
+            this.targets = this.batch + 1; // targets are shifted by one
+            this.num_batches = this.file_size / (B * T * sizeof(int));
         }
 
-        // determine the file size
-        fseek(loader->tokens_file, 0, SEEK_END);
-        loader->file_size = ftell(loader->tokens_file);
-        fseek(loader->tokens_file, 0, SEEK_SET);
-        if (loader->file_size < (B * T + 1) * sizeof(int))
+        public unsafe void dataloader_reset()
         {
-            Log($"Error: file size is too small for the batch size and sequence length");
-            exit(1);
+            this.tokens_file.Position = 0;
         }
-        loader->current_position = 0; // start at the beginning
 
-        // allocate space for B*T + 1 integers to store the inputs and targets
-        loader->batch = (int*)malloc((B * T + 1) * sizeof(int));
-        loader->inputs = loader->batch;
-        loader->targets = loader->batch + 1; // targets are shifted by one
-        loader->num_batches = loader->file_size / (B * T * sizeof(int));
-    }
-
-    static unsafe void dataloader_reset(DataLoader* loader)
-    {
-        loader->current_position = 0;
-    }
-
-    static unsafe void dataloader_next_batch(DataLoader* loader)
-    {
-        int B = loader->B;
-        int T = loader->T;
-        // if we are at the end of the file, loop back to the beginning
-        if (loader->current_position + (B * T + 1) * sizeof(int) > loader->file_size)
+        public unsafe void dataloader_next_batch()
         {
-            loader->current_position = 0;
+            // if we are at the end of the file, loop back to the beginning
+            if (this.tokens_file.Position + (B * T + 1) * sizeof(int) > this.file_size)
+            {
+                this.tokens_file.Position = 0;
+            }
+            // read the B*T+1 integers from the file into batch
+            tokens_file.ReadExactlyUnmanaged(this.batch, B * T + 1);
+            //fread(this.batch, sizeof(int), B * T + 1, this.tokens_file);
+            // advance the current position by B*T integers 
+            //this.current_position += B * T * sizeof(int);
+            // Read +1 more token to get the target and hence have to move back
+            tokens_file.Position -= sizeof(int);
         }
-        // read the B*T+1 integers from the file into batch
-        fseek(loader->tokens_file, loader->current_position, SEEK_SET);
-        fread(loader->batch, sizeof(int), B * T + 1, loader->tokens_file);
-        // advance the current position by B*T integers
-        loader->current_position += B * T * sizeof(int);
+
+        public unsafe void dataloader_free()
+        {
+            Dispose(true);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposedValue)
+            {
+                if (disposing)
+                {
+                    this.tokens_file.Dispose();
+                }
+                free(this.batch);
+                _disposedValue = true;
+            }
+        }
+
+        // // TODO: override finalizer only if 'Dispose(bool disposing)' has code to free unmanaged resources
+        // ~DataLoader()
+        // {
+        //     // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
+        //     Dispose(disposing: false);
+        // }
+
+        public void Dispose()
+        {
+            // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
+            Dispose(disposing: true);
+            GC.SuppressFinalize(this);
+        }
     }
 
-    static unsafe void dataloader_free(DataLoader* loader)
+
+    // Add the following code to the Llm class
+
+    public unsafe static T* calloc<T>(long size) where T : unmanaged
     {
-        fclose(loader->tokens_file);
-        free(loader->batch);
+        var ptr = malloc<T>(size);
+        memset(ptr, size);
+        return ptr;
     }
+
+    public unsafe static T* malloc<T>(long size) where T : unmanaged
+    {
+        return (T*)NativeMemory.Alloc((nuint)(size * sizeof(T)));
+    }
+
+    public unsafe static void free<T>(T* ptr) where T : unmanaged
+    {
+        NativeMemory.Free(ptr);
+    }
+
+    public unsafe static void memcpy<T>(T* dest, T* src, long size) where T : unmanaged
+    {
+        var sizeInBytes = size * sizeof(T);
+        Buffer.MemoryCopy(src, dest, sizeInBytes, sizeInBytes);
+    }
+
+    public unsafe static void memset<T>(T* ptr, long size) where T : unmanaged
+    {
+        NativeMemory.Clear(ptr, (nuint)(size * sizeof(T)));
+    }
+
 
     // ----------------------------------------------------------------------------
     // sampler
@@ -1171,6 +1217,30 @@ public static class Llm
         return n - 1; // in case of rounding errors
     }
 
+
+    static unsafe void ReadExactlyUnmanaged<T>(this FileStream file, Span<T> values)
+        where T : unmanaged
+    {
+        fixed (T* ptr = values)
+        {
+            ReadExactlyUnmanaged(file, ptr, values.Length);
+        }
+    }
+
+    static unsafe void ReadExactlyUnmanaged<T>(this FileStream file, T* values, long count)
+        where T : unmanaged
+    {
+        Span<T> buffer = stackalloc T[(256 * 1024) / Unsafe.SizeOf<T>()];
+        var totalReadCount = 0;
+        while (totalReadCount < count)
+        {
+            var countToRead = (int)Math.Min(buffer.Length, count - totalReadCount);
+            var span = MemoryMarshal.Cast<T, byte>(buffer.Slice(0, countToRead));
+            file.ReadExactly(span);
+            totalReadCount += countToRead;
+        }
+    }
+
     // ----------------------------------------------------------------------------
     // main training loop
     static unsafe void Main()
@@ -1189,12 +1259,10 @@ public static class Llm
         var val_tokens = File.Exists(tiny_shakespeare_val) ? tiny_shakespeare_val : tiny_stories_val;
         int B = 4; // batch size 4 (i.e. 4 independent token sequences will be trained on)
         int T = 64; // sequence length 64 (i.e. each sequence is 64 tokens long). must be <= maxT, which is 1024 for GPT-2
-        DataLoader train_loader;
-        dataloader_init(&train_loader, train_tokens, B, T);
+        using DataLoader train_loader = new(train_tokens, B, T);
         Log($"train dataset num_batches: {train_loader.num_batches}");
 
-        DataLoader val_loader;
-        dataloader_init(&val_loader, val_tokens, B, T);
+        using DataLoader val_loader = new(val_tokens, B, T);
         Log($"val dataset num_batches: {val_loader.num_batches}");
         int val_num_batches = 10;
 
@@ -1213,10 +1281,10 @@ public static class Llm
             if (step % 10 == 0)
             {
                 float val_loss = 0.0f;
-                dataloader_reset(&val_loader);
+                val_loader.dataloader_reset();
                 for (int i = 0; i < val_num_batches; i++)
                 {
-                    dataloader_next_batch(&val_loader);
+                    val_loader.dataloader_next_batch();
                     gpt2_forward(&model, val_loader.inputs, val_loader.targets, B, T);
                     val_loss += model.mean_loss;
                 }
@@ -1250,7 +1318,7 @@ public static class Llm
 
             // do a training step
             stopwatch.Restart();
-            dataloader_next_batch(&train_loader);
+            train_loader.dataloader_next_batch();
             gpt2_forward(&model, train_loader.inputs, train_loader.targets, B, T);
             gpt2_zero_grad(&model);
             gpt2_backward(&model);
@@ -1260,8 +1328,8 @@ public static class Llm
         }
 
         // free
-        dataloader_free(&train_loader);
-        dataloader_free(&val_loader);
+        train_loader.dataloader_free();
+        val_loader.dataloader_free();
         gpt2_free(&model);
     }
 }
