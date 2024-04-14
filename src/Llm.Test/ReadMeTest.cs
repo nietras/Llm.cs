@@ -109,7 +109,7 @@ public class ReadMeTest
     [TestMethod]
     public void ReadMeTest_PublicApi()
     {
-        var publicApi = typeof(Llm).Assembly.GeneratePublicApi();
+        var publicApi = typeof(Gpt2).Assembly.GeneratePublicApi();
 
         var readmeFilePath = s_readmeFilePath;
         var readmeLines = File.ReadAllLines(readmeFilePath);
