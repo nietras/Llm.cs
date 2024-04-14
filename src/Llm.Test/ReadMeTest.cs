@@ -43,35 +43,37 @@ public class ReadMeTest
         };
 
         var benchmarksDirectory = Path.Combine(s_rootDirectory, "benchmarks");
-        var processorDirectories = Directory.EnumerateDirectories(benchmarksDirectory).ToArray();
-        var processors = processorDirectories.Select(LastDirectoryName).ToArray();
-
-        var readmeLines = File.ReadAllLines(readmeFilePath);
-
-        foreach (var (fileName, config) in benchmarkFileNameToConfig)
+        if (Directory.Exists(benchmarksDirectory))
         {
-            var description = config.Description;
-            var prefix = config.SectionPrefix;
-            var readmeBefore = config.ReadmeBefore;
-            var readmeEndLine = config.ReadmeEnd;
-            var all = "";
-            foreach (var processorDirectory in processorDirectories)
+            var processorDirectories = Directory.EnumerateDirectories(benchmarksDirectory).ToArray();
+            var processors = processorDirectories.Select(LastDirectoryName).ToArray();
+
+            var readmeLines = File.ReadAllLines(readmeFilePath);
+
+            foreach (var (fileName, config) in benchmarkFileNameToConfig)
             {
-                var versions = File.ReadAllText(Path.Combine(processorDirectory, "Versions.txt"));
-                var contents = File.ReadAllText(Path.Combine(processorDirectory, fileName));
-                var processor = LastDirectoryName(processorDirectory);
+                var description = config.Description;
+                var prefix = config.SectionPrefix;
+                var readmeBefore = config.ReadmeBefore;
+                var readmeEndLine = config.ReadmeEnd;
+                var all = "";
+                foreach (var processorDirectory in processorDirectories)
+                {
+                    var versions = File.ReadAllText(Path.Combine(processorDirectory, "Versions.txt"));
+                    var contents = File.ReadAllText(Path.Combine(processorDirectory, fileName));
+                    var processor = LastDirectoryName(processorDirectory);
 
-                var section = $"{prefix}{processor} - {description} ({versions})";
-                var benchmarkTable = GetBenchmarkTable(contents);
-                var readmeContents = $"{section}{Environment.NewLine}{Environment.NewLine}{benchmarkTable}{Environment.NewLine}";
-                all += readmeContents;
+                    var section = $"{prefix}{processor} - {description} ({versions})";
+                    var benchmarkTable = GetBenchmarkTable(contents);
+                    var readmeContents = $"{section}{Environment.NewLine}{Environment.NewLine}{benchmarkTable}{Environment.NewLine}";
+                    all += readmeContents;
+                }
+                readmeLines = ReplaceReadmeLines(readmeLines, [all], readmeBefore, prefix, 0, readmeEndLine, 0);
             }
-            readmeLines = ReplaceReadmeLines(readmeLines, [all], readmeBefore, prefix, 0, readmeEndLine, 0);
+
+            var newReadme = string.Join(Environment.NewLine, readmeLines) + Environment.NewLine;
+            File.WriteAllText(readmeFilePath, newReadme, Encoding.UTF8);
         }
-
-        var newReadme = string.Join(Environment.NewLine, readmeLines) + Environment.NewLine;
-        File.WriteAllText(readmeFilePath, newReadme, Encoding.UTF8);
-
         static string LastDirectoryName(string d) =>
             d.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Last();
 
