@@ -537,42 +537,42 @@ public static class Llm
     const int NUM_PARAMETER_TENSORS = 16;
     public unsafe struct ParameterTensors
     {
-        float* wte; // (V, C)
-        float* wpe; // (maxT, C)
-        float* ln1w; // (L, C)
-        float* ln1b; // (L, C)
-        float* qkvw; // (L, 3*C, C)
-        float* qkvb; // (L, 3*C)
-        float* attprojw; // (L, C, C)
-        float* attprojb; // (L, C)
-        float* ln2w; // (L, C)
-        float* ln2b; // (L, C)
-        float* fcw; // (L, 4*C, C)
-        float* fcb; // (L, 4*C)
-        float* fcprojw; // (L, C, 4*C)
-        float* fcprojb; // (L, C)
-        float* lnfw; // (C)
-        float* lnfb; // (C)
+        public float* wte; // (V, C)
+        public float* wpe; // (maxT, C)
+        public float* ln1w; // (L, C)
+        public float* ln1b; // (L, C)
+        public float* qkvw; // (L, 3*C, C)
+        public float* qkvb; // (L, 3*C)
+        public float* attprojw; // (L, C, C)
+        public float* attprojb; // (L, C)
+        public float* ln2w; // (L, C)
+        public float* ln2b; // (L, C)
+        public float* fcw; // (L, 4*C, C)
+        public float* fcb; // (L, 4*C)
+        public float* fcprojw; // (L, C, 4*C)
+        public float* fcprojb; // (L, C)
+        public float* lnfw; // (C)
+        public float* lnfb; // (C)
     }
 
     // allocate memory for the parameters and point the individual tensors to the right places
-    public unsafe static float* malloc_and_point_parameters(ParameterTensors* parameters, nint* param_sizes)
+    public unsafe static float* malloc_and_point_parameters(ParameterTensors* parameters, long* param_sizes)
     {
-        nint num_parameters = 0;
-        for (nint i = 0; i < NUM_PARAMETER_TENSORS; i++)
+        long num_parameters = 0;
+        for (long i = 0; i < NUM_PARAMETER_TENSORS; i++)
         {
             num_parameters += param_sizes[i];
         }
         // malloc all parameters all at once
         float* params_memory = (float*)malloc(num_parameters * sizeof(float));
         // assign all the tensors
-        float** ptrs[] = {
+        float**[] ptrs = [
         &parameters->wte, &parameters->wpe, &parameters->ln1w, &parameters->ln1b, &parameters->qkvw, &parameters->qkvb,
         &parameters->attprojw, &parameters->attprojb, &parameters->ln2w, &parameters->ln2b, &parameters->fcw, &parameters->fcb,
         &parameters->fcprojw, &parameters->fcprojb, &parameters->lnfw, &parameters->lnfb
-    };
+    ];
         float* params_memory_iterator = params_memory;
-        for (nint i = 0; i < NUM_PARAMETER_TENSORS; i++)
+        for (long i = 0; i < NUM_PARAMETER_TENSORS; i++)
         {
             *(ptrs[i]) = params_memory_iterator;
             params_memory_iterator += param_sizes[i];
@@ -583,47 +583,47 @@ public static class Llm
     const int NUM_ACTIVATION_TENSORS = 23;
     public unsafe struct ActivationTensors
     {
-        float* encoded; // (B, T, C)
-        float* ln1; // (L, B, T, C)
-        float* ln1_mean; // (L, B, T)
-        float* ln1_rstd; // (L, B, T)
-        float* qkv; // (L, B, T, 3*C)
-        float* atty; // (L, B, T, C)
-        float* preatt; // (L, B, NH, T, T)
-        float* att; // (L, B, NH, T, T)
-        float* attproj; // (L, B, T, C)
-        float* residual2; // (L, B, T, C)
-        float* ln2; // (L, B, T, C)
-        float* ln2_mean; // (L, B, T)
-        float* ln2_rstd; // (L, B, T)
-        float* fch; // (L, B, T, 4*C)
-        float* fch_gelu; // (L, B, T, 4*C)
-        float* fcproj; // (L, B, T, C)
-        float* residual3; // (L, B, T, C)
-        float* lnf; // (B, T, C)
-        float* lnf_mean; // (B, T)
-        float* lnf_rstd; // (B, T)
-        float* logits; // (B, T, V)
-        float* probs; // (B, T, V)
-        float* losses; // (B, T)
+        public float* encoded; // (B, T, C)
+        public float* ln1; // (L, B, T, C)
+        public float* ln1_mean; // (L, B, T)
+        public float* ln1_rstd; // (L, B, T)
+        public float* qkv; // (L, B, T, 3*C)
+        public float* atty; // (L, B, T, C)
+        public float* preatt; // (L, B, NH, T, T)
+        public float* att; // (L, B, NH, T, T)
+        public float* attproj; // (L, B, T, C)
+        public float* residual2; // (L, B, T, C)
+        public float* ln2; // (L, B, T, C)
+        public float* ln2_mean; // (L, B, T)
+        public float* ln2_rstd; // (L, B, T)
+        public float* fch; // (L, B, T, 4*C)
+        public float* fch_gelu; // (L, B, T, 4*C)
+        public float* fcproj; // (L, B, T, C)
+        public float* residual3; // (L, B, T, C)
+        public float* lnf; // (B, T, C)
+        public float* lnf_mean; // (B, T)
+        public float* lnf_rstd; // (B, T)
+        public float* logits; // (B, T, V)
+        public float* probs; // (B, T, V)
+        public float* losses; // (B, T)
     }
 
-    public unsafe static float* malloc_and_point_activations(ActivationTensors* acts, nint* act_sizes)
+    public unsafe static float* malloc_and_point_activations(ActivationTensors* acts, long* act_sizes)
     {
-        nint num_activations = 0;
-        for (nint i = 0; i < NUM_ACTIVATION_TENSORS; i++)
+        long num_activations = 0;
+        for (long i = 0; i < NUM_ACTIVATION_TENSORS; i++)
         {
             num_activations += act_sizes[i];
         }
         float* acts_memory = (float*)malloc(num_activations * sizeof(float));
-        float** ptrs[] = {
+        float**[] ptrs = [
         &acts->encoded, &acts->ln1, &acts->ln1_mean, &acts->ln1_rstd, &acts->qkv, &acts->atty,
         &acts->preatt, &acts->att, &acts->attproj, &acts->residual2, &acts->ln2, &acts->ln2_mean,
         &acts->ln2_rstd, &acts->fch, &acts->fch_gelu, &acts->fcproj, &acts->residual3, &acts->lnf,
         &acts->lnf_mean, &acts->lnf_rstd, &acts->logits, &acts->probs, &acts->losses
-    };
+    ];
         float* acts_memory_iterator = acts_memory;
-        for (nint i = 0; i < NUM_ACTIVATION_TENSORS; i++)
+        for (long i = 0; i < NUM_ACTIVATION_TENSORS; i++)
         {
             *(ptrs[i]) = acts_memory_iterator;
             acts_memory_iterator += act_sizes[i];
@@ -633,50 +633,50 @@ public static class Llm
 
     public unsafe struct GPT2Config
     {
-        int max_seq_len; // max sequence length, e.g. 1024
-        int vocab_size; // vocab size, e.g. 50257
-        int num_layers; // number of layers, e.g. 12
-        int num_heads; // number of heads in attention, e.g. 12
-        int channels; // number of channels, e.g. 768
+        public int max_seq_len; // max sequence length, e.g. 1024
+        public int vocab_size; // vocab size, e.g. 50257
+        public int num_layers; // number of layers, e.g. 12
+        public int num_heads; // number of heads in attention, e.g. 12
+        public int channels; // number of channels, e.g. 768
     }
 
     public unsafe struct GPT2
     {
-        GPT2Config config;
+        public GPT2Config config;
         // the weights (parameters) of the model, and their sizes
-        ParameterTensors parameters;
-        nint param_sizes[NUM_PARAMETER_TENSORS];
-        float* params_memory;
-        int num_parameters;
+        public ParameterTensors parameters;
+        public fixed long param_sizes[NUM_PARAMETER_TENSORS];
+        public float* params_memory;
+        public int num_parameters;
         // gradients of the weights
-        ParameterTensors grads;
-        float* grads_memory;
+        public ParameterTensors grads;
+        public float* grads_memory;
         // buffers for the AdamW optimizer
-        float* m_memory;
-        float* v_memory;
+        public float* m_memory;
+        public float* v_memory;
         // the activations of the model, and their sizes
-        ActivationTensors acts;
-        nint act_sizes[NUM_ACTIVATION_TENSORS];
-        float* acts_memory;
-        int num_activations;
+        public ActivationTensors acts;
+        public fixed long act_sizes[NUM_ACTIVATION_TENSORS];
+        public float* acts_memory;
+        public int num_activations;
         // gradients of the activations
-        ActivationTensors grads_acts;
-        float* grads_acts_memory;
+        public ActivationTensors grads_acts;
+        public float* grads_acts_memory;
         // other run state configuration
-        int batch_size; // the batch size (B) of current forward pass
-        int seq_len; // the sequence length (T) of current forward pass
-        int* inputs; // the input tokens for the current forward pass
-        int* targets; // the target tokens for the current forward pass
-        float mean_loss; // after a forward pass with targets, will be populated with the mean loss
+        public int batch_size; // the batch size (B) of current forward pass
+        public int seq_len; // the sequence length (T) of current forward pass
+        public int* inputs; // the input tokens for the current forward pass
+        public int* targets; // the target tokens for the current forward pass
+        public float mean_loss; // after a forward pass with targets, will be populated with the mean loss
     }
 
     public unsafe static void gpt2_build_from_checkpoint(GPT2* model, char* checkpoint_path)
     {
 
         // read in model from a checkpoint file
-        FILE* model_file = fopen(checkpoint_path, "rb");
+        SafeFileHandle model_file = fopen(checkpoint_path, "rb");
         if (model_file == null) { printf("Error opening model file\n"); exit(1); }
-        int model_header[256];
+        Span<int> model_header = stackalloc int[256];
         fread(model_header, sizeof(int), 256, model_file);
         if (model_header[0] != 20240326) { printf("Bad magic model file"); exit(1); }
         if (model_header[1] != 1) { printf("Bad version in model file"); exit(1); }
@@ -714,8 +714,8 @@ public static class Llm
         model->param_sizes[15] = C; // lnfb
 
         // cound the number of paramaters
-        nint num_parameters = 0;
-        for (nint i = 0; i < NUM_PARAMETER_TENSORS; i++)
+        long num_parameters = 0;
+        for (long i = 0; i < NUM_PARAMETER_TENSORS; i++)
         {
             num_parameters += model->param_sizes[i];
         }
@@ -740,7 +740,7 @@ public static class Llm
         model->mean_loss = -1.0f; // -1.0f will designate no loss
     }
 
-    void gpt2_forward(GPT2* model, int* inputs, int* targets, int B, int T)
+    static unsafe void gpt2_forward(GPT2* model, int* inputs, int* targets, int B, int T)
     {
         // targets are optional and could be null
 
@@ -787,8 +787,8 @@ public static class Llm
             model->act_sizes[20] = B * T * V; // logits
             model->act_sizes[21] = B * T * V; // probs
             model->act_sizes[22] = B * T; // losses
-            nint num_activations = 0;
-            for (nint i = 0; i < NUM_ACTIVATION_TENSORS; i++)
+            long num_activations = 0;
+            for (long i = 0; i < NUM_ACTIVATION_TENSORS; i++)
             {
                 num_activations += model->act_sizes[i];
             }
@@ -1128,7 +1128,7 @@ public static class Llm
         loader->current_position += B * T * sizeof(int);
     }
 
-    void dataloader_free(DataLoader* loader)
+    static unsafe void dataloader_free(DataLoader* loader)
     {
         fclose(loader->tokens_file);
         free(loader->batch);
@@ -1196,68 +1196,71 @@ public static class Llm
         int val_num_batches = 10;
 
         // some memory for generating samples from the model
-        unsigned long long rng_state = 1337;
+        ulong rng_state = 1337;
         // during inference step we'll generate sequences of this many tokens
         const int gen_max_length = 64;
-        int gen_tokens[gen_max_length];
+        Span<int> gen_tokens = stackalloc int[gen_max_length];
 
-    // train
-    struct timespec start, end;
-    for (int step = 0; step <= 20; step++) {
+        // train
+        long start, end;
+        for (int step = 0; step <= 20; step++)
+        {
 
-        // once in a while estimate the validation loss
-        if (step % 10 == 0) {
-            float val_loss = 0.0f;
-    dataloader_reset(&val_loader);
-            for (int i = 0; i<val_num_batches; i++) {
-                dataloader_next_batch(&val_loader);
-    gpt2_forward(&model, val_loader.inputs, val_loader.targets, B, T);
-    val_loss += model.mean_loss;
+            // once in a while estimate the validation loss
+            if (step % 10 == 0)
+            {
+                float val_loss = 0.0f;
+                dataloader_reset(&val_loader);
+                for (int i = 0; i < val_num_batches; i++)
+                {
+                    dataloader_next_batch(&val_loader);
+                    gpt2_forward(&model, val_loader.inputs, val_loader.targets, B, T);
+                    val_loss += model.mean_loss;
+                }
+                val_loss /= val_num_batches;
+                printf("val loss %f\n", val_loss);
             }
-val_loss /= val_num_batches;
-            printf("val loss %f\n", val_loss);
+
+            // once in a while do model inference to print generated text
+            if (step > 0 && step % 20 == 0)
+            {
+                gen_tokens[0] = GPT2_EOT; // the GPT-2 EOT token kicks off the generation
+                for (int t = 1; t < gen_max_length; t++)
+                {
+                    // note that inference is wasteful here because
+                    // for each t, we re-compute all activations between 0 and t
+                    // leaving this alone because you want separate code for inference anyway
+                    // the inference here is just for sanity checking purposes
+                    gpt2_forward(&model, gen_tokens, null, 1, t);
+                    float* probs = model.acts.probs + (t - 1) * model.config.vocab_size;
+                    float coin = random_f32(&rng_state);
+                    int next_token = sample_mult(probs, model.config.vocab_size, coin);
+                    gen_tokens[t] = next_token;
+                }
+                printf("generated: ");
+                for (int t = 0; t < gen_max_length; t++)
+                {
+                    printf("%d ", gen_tokens[t]);
+                }
+                printf("\n");
+            }
+
+            // do a training step
+            clock_gettime(CLOCK_MONOTONIC, &start);
+            dataloader_next_batch(&train_loader);
+            gpt2_forward(&model, train_loader.inputs, train_loader.targets, B, T);
+            gpt2_zero_grad(&model);
+            gpt2_backward(&model);
+            gpt2_update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, step + 1);
+            clock_gettime(CLOCK_MONOTONIC, &end);
+            double time_elapsed_s = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+            printf("step %d: train loss %f (took %f ms)\n", step, model.mean_loss, time_elapsed_s * 1000);
         }
 
-        // once in a while do model inference to print generated text
-        if (step > 0 && step % 20 == 0)
-{
-    gen_tokens[0] = GPT2_EOT; // the GPT-2 EOT token kicks off the generation
-    for (int t = 1; t < gen_max_length; t++)
-    {
-        // note that inference is wasteful here because
-        // for each t, we re-compute all activations between 0 and t
-        // leaving this alone because you want separate code for inference anyway
-        // the inference here is just for sanity checking purposes
-        gpt2_forward(&model, gen_tokens, null, 1, t);
-        float* probs = model.acts.probs + (t - 1) * model.config.vocab_size;
-        float coin = random_f32(&rng_state);
-        int next_token = sample_mult(probs, model.config.vocab_size, coin);
-        gen_tokens[t] = next_token;
+        // free
+        dataloader_free(&train_loader);
+        dataloader_free(&val_loader);
+        gpt2_free(&model);
+        return 0;
     }
-    printf("generated: ");
-    for (int t = 0; t < gen_max_length; t++)
-    {
-        printf("%d ", gen_tokens[t]);
-    }
-    printf("\n");
-}
-
-// do a training step
-clock_gettime(CLOCK_MONOTONIC, &start);
-dataloader_next_batch(&train_loader);
-gpt2_forward(&model, train_loader.inputs, train_loader.targets, B, T);
-gpt2_zero_grad(&model);
-gpt2_backward(&model);
-gpt2_update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, step + 1);
-clock_gettime(CLOCK_MONOTONIC, &end);
-double time_elapsed_s = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
-printf("step %d: train loss %f (took %f ms)\n", step, model.mean_loss, time_elapsed_s * 1000);
-    }
-
-    // free
-    dataloader_free(&train_loader);
-dataloader_free(&val_loader);
-gpt2_free(&model);
-return 0;
-}
 }
