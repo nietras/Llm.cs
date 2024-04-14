@@ -100,22 +100,6 @@ public class ReadMeTest
         readmeLines = UpdateReadme(testSourceLines, readmeLines, testBlocksToUpdate,
             sourceStartLineOffset: 2, "    }", sourceEndLineOffset: 0, sourceWhitespaceToRemove: 8);
 
-        var readerOptionsSourceLines = File.ReadAllLines(rootDirectory + @"src/Llm/LlmReaderOptions.cs");
-        var readerOptionsBlocksToUpdate = new (string StartLineContains, string ReadmeLineBeforeCodeBlock)[]
-        {
-            ("/// <summary>", "#### LlmReaderOptions"),
-        };
-        readmeLines = UpdateReadme(readerOptionsSourceLines, readmeLines, readerOptionsBlocksToUpdate,
-            sourceStartLineOffset: 0, "}", sourceEndLineOffset: 0, sourceWhitespaceToRemove: 4);
-
-        var writerOptionsSourceLines = File.ReadAllLines(rootDirectory + @"src/Llm/LlmWriterOptions.cs");
-        var writerOptionsBlocksToUpdate = new (string StartLineContains, string ReadmeLineBeforeCodeBlock)[]
-        {
-            ("/// <summary>", "#### LlmWriterOptions"),
-        };
-        readmeLines = UpdateReadme(writerOptionsSourceLines, readmeLines, writerOptionsBlocksToUpdate,
-            sourceStartLineOffset: 0, "}", sourceEndLineOffset: 0, sourceWhitespaceToRemove: 4);
-
         var newReadme = string.Join(Environment.NewLine, readmeLines) + Environment.NewLine;
         File.WriteAllText(readmeFilePath, newReadme, Encoding.UTF8);
     }
