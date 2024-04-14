@@ -25,7 +25,7 @@ public static partial class Gpt2
         // read span from model_file
         state_file.ReadExactlyUnmanaged(state_header);
         //fread(model_header, sizeof(int), 256, model_file);
-        if (state_header[0] != 20240326) { throw new InvalidDataException($"Bad magic model file"); }
+        if (state_header[0] != 20240327) { throw new InvalidDataException($"Bad magic model file"); }
         if (state_header[1] != 1) { throw new InvalidDataException($"Bad version in model file"); }
 
         int B = state_header[2]; // batch size, e.g. 4

@@ -1,3 +1,4 @@
 ﻿using nietras.LargeLanguageModel;
 
-Gpt2.Train();
+Gpt2.Test();
+//Gpt2.Train();
