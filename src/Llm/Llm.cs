@@ -1246,7 +1246,7 @@ public static class Llm
 
     // ----------------------------------------------------------------------------
     // main training loop
-    public static unsafe void Main()
+    public static unsafe void Train()
     {
         var location = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
         var dataDirectory = Path.Combine(location!, "../../../");
