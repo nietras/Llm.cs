@@ -6,15 +6,6 @@ using System.Runtime.InteropServices;
 
 namespace nietras.LargeLanguageModel;
 
-/*
-This file trains the GPT-2 model.
-This version is the clean, minimal, reference. As such:
-- it runs on CPU.
-- it does not make the code too complex; it is readable.
-- it does not use any processor-specific instructions, intrinsics and such.
-- it _does_ use a few OpenMP pragmas because this is a large speedup at very low cost
-There will be other versions of this code that specialize it and make it fast.
-*/
 public static partial class Gpt2
 {
     static readonly Action<string> Log = t => { Console.WriteLine(t); Trace.WriteLine(t); };

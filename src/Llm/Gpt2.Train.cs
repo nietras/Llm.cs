@@ -94,8 +94,6 @@ public static partial class Gpt2
         }
 
         // free
-        train_loader.dataloader_free();
-        val_loader.dataloader_free();
         gpt2_free(&model);
     }
 }
