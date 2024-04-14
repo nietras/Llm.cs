@@ -1,0 +1,67 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31710.8
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Llm", "src\Llm\Llm.csproj", "{FD595AC7-E1A5-4ACA-AE60-3539AB1691FF}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Llm.Test", "src\Llm.Test\Llm.Test.csproj", "{868534AC-9CA4-4E55-845A-9FF9F2A701F5}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{7DC8FFC9-A687-4D7C-8BF2-A5CAAF220719}"
+	ProjectSection(SolutionItems) = preProject
+		src\Directory.Build.props = src\Directory.Build.props
+		src\Directory.Build.targets = src\Directory.Build.targets
+		src\SourceLink.GitHub.props = src\SourceLink.GitHub.props
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "root", "root", "{32021D88-49F3-4B84-B1DB-5DF5CF874F69}"
+	ProjectSection(SolutionItems) = preProject
+		.editorconfig = .editorconfig
+		.gitattributes = .gitattributes
+		.gitignore = .gitignore
+		bench.ps1 = bench.ps1
+		CODE_OF_CONDUCT.md = CODE_OF_CONDUCT.md
+		global.json = global.json
+		Icon.png = Icon.png
+		nuget.config = nuget.config
+		pack.ps1 = pack.ps1
+		README.md = README.md
+		rename.ps1 = rename.ps1
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ci", "ci", "{655261D2-06EE-4553-9EE2-ABBF5ED83AD4}"
+	ProjectSection(SolutionItems) = preProject
+		.github\workflows\bench.yml = .github\workflows\bench.yml
+		.github\dependabot.yml = .github\dependabot.yml
+		.github\workflows\dotnet.yml = .github\workflows\dotnet.yml
+		.github\workflows\super-linter.yml = .github\workflows\super-linter.yml
+	EndProjectSection
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Llm.Benchmarks", "src\Llm.Benchmarks\Llm.Benchmarks.csproj", "{690F1276-E1B8-434C-AF45-B8C5BBB66B2A}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FD595AC7-E1A5-4ACA-AE60-3539AB1691FF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FD595AC7-E1A5-4ACA-AE60-3539AB1691FF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FD595AC7-E1A5-4ACA-AE60-3539AB1691FF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FD595AC7-E1A5-4ACA-AE60-3539AB1691FF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{868534AC-9CA4-4E55-845A-9FF9F2A701F5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{868534AC-9CA4-4E55-845A-9FF9F2A701F5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{868534AC-9CA4-4E55-845A-9FF9F2A701F5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{868534AC-9CA4-4E55-845A-9FF9F2A701F5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{690F1276-E1B8-434C-AF45-B8C5BBB66B2A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{690F1276-E1B8-434C-AF45-B8C5BBB66B2A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{690F1276-E1B8-434C-AF45-B8C5BBB66B2A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{690F1276-E1B8-434C-AF45-B8C5BBB66B2A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {1E747986-0697-4C21-82BE-E84850C0687A}
+	EndGlobalSection
+EndGlobal
