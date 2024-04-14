@@ -1,3 +1,3 @@
 ﻿using nietras.LargeLanguageModel;
 
-Llm.Train();
+Gpt2.Train();
