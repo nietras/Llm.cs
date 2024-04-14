@@ -561,9 +561,22 @@ public static partial class Gpt2
         float* params_memory = malloc<float>(num_parameters);
         // assign all the tensors
         float**[] ptrs = [
-        &parameters->wte, &parameters->wpe, &parameters->ln1w, &parameters->ln1b, &parameters->qkvw, &parameters->qkvb,
-        &parameters->attprojw, &parameters->attprojb, &parameters->ln2w, &parameters->ln2b, &parameters->fcw, &parameters->fcb,
-        &parameters->fcprojw, &parameters->fcprojb, &parameters->lnfw, &parameters->lnfb
+        &parameters->wte,
+            &parameters->wpe,
+            &parameters->ln1w,
+            &parameters->ln1b,
+            &parameters->qkvw,
+            &parameters->qkvb,
+            &parameters->attprojw,
+            &parameters->attprojb,
+            &parameters->ln2w,
+            &parameters->ln2b,
+            &parameters->fcw,
+            &parameters->fcb,
+            &parameters->fcprojw,
+            &parameters->fcprojb,
+            &parameters->lnfw,
+            &parameters->lnfb
     ];
         float* params_memory_iterator = params_memory;
         for (long i = 0; i < NUM_PARAMETER_TENSORS; i++)
@@ -611,10 +624,29 @@ public static partial class Gpt2
         }
         float* acts_memory = malloc<float>(num_activations);
         float**[] ptrs = [
-        &acts->encoded, &acts->ln1, &acts->ln1_mean, &acts->ln1_rstd, &acts->qkv, &acts->atty,
-        &acts->preatt, &acts->att, &acts->attproj, &acts->residual2, &acts->ln2, &acts->ln2_mean,
-        &acts->ln2_rstd, &acts->fch, &acts->fch_gelu, &acts->fcproj, &acts->residual3, &acts->lnf,
-        &acts->lnf_mean, &acts->lnf_rstd, &acts->logits, &acts->probs, &acts->losses
+        &acts->encoded,
+            &acts->ln1,
+            &acts->ln1_mean,
+            &acts->ln1_rstd,
+            &acts->qkv,
+            &acts->atty,
+            &acts->preatt,
+            &acts->att,
+            &acts->attproj,
+            &acts->residual2,
+            &acts->ln2,
+            &acts->ln2_mean,
+            &acts->ln2_rstd,
+            &acts->fch,
+            &acts->fch_gelu,
+            &acts->fcproj,
+            &acts->residual3,
+            &acts->lnf,
+            &acts->lnf_mean,
+            &acts->lnf_rstd,
+            &acts->logits,
+            &acts->probs,
+            &acts->losses
     ];
         float* acts_memory_iterator = acts_memory;
         for (long i = 0; i < NUM_ACTIVATION_TENSORS; i++)
