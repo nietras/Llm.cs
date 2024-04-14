@@ -8,14 +8,14 @@
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
     <EnableAOTAnalyzer>true</EnableAOTAnalyzer>
 
-    <EnablePackageValidation>true</EnablePackageValidation>
-    <PackageValidationBaselineVersion>0.4.0</PackageValidationBaselineVersion>
+    <!--<EnablePackageValidation>true</EnablePackageValidation>
+    <PackageValidationBaselineVersion>0.1.0</PackageValidationBaselineVersion>-->
 
-    <Description>Modern, minimal, fast, zero allocation, reading and writing of separated values (csv, tsv etc.). Cross-platform, trimmable and AOT/NativeAOT compatible.</Description>
+    <Description>C# port of @karpathy https://github.com/karpathy/llm.c.</Description>
 
     <!-- NuGet -->
     <PackageId>Llm</PackageId>
-    <PackageTags>csv;csvhelper;comma;semi-colon;tab;separated;value;delimited;io;file;read;write;parse;format</PackageTags>
+    <PackageTags>llm;ml</PackageTags>
     <PackageIcon>Icon.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIconUrl>https://raw.github.com/nietras/Llm/main/Icon.png</PackageIconUrl>
@@ -47,13 +47,6 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>$(MSBuildProjectName).Benchmarks</_Parameter1>
     </AssemblyAttribute>
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>$(MSBuildProjectName).ComparisonBenchmarks</_Parameter1>
-    </AssemblyAttribute>
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="csFastFloat" Version="4.1.0" />
   </ItemGroup>
 
 </Project>

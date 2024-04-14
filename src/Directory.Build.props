@@ -7,10 +7,10 @@
 
     <Company>nietras</Company>
     <Authors>nietras</Authors>
-    <Copyright>Copyright © nietras A/S 2023</Copyright>
+    <Copyright>Copyright © nietras A/S 2024</Copyright>
     <NeutralLanguage>en</NeutralLanguage>
 
-    <TargetFrameworks>net8.0;net7.0</TargetFrameworks>
+    <TargetFrameworks>net8.0</TargetFrameworks>
 
     <LangVersion>12.0</LangVersion>
     <Deterministic>true</Deterministic>
@@ -33,13 +33,6 @@
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
     <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
-
-    <!--<DefineConstants Condition="'$(Configuration)'=='Release'">$(DefineConstants);SEPBENCHSEPONLY</DefineConstants>-->
-    <DefineConstants Condition="'$(Configuration)'=='Release'">$(DefineConstants);SEPBENCHSLOWONES</DefineConstants>
-    <DefineConstants Condition="'$(Configuration)'=='Debug'">$(DefineConstants);SEPASSERT</DefineConstants>
-    <!--<DefineConstants Condition="'$(Configuration)'=='Debug'">$(DefineConstants);SEPTRACE</DefineConstants>-->
-    <DefineConstants Condition="'$(Configuration)'=='Debug'">$(DefineConstants);SEPREADERASSERT</DefineConstants>
-    <!--<DefineConstants Condition="'$(Configuration)'=='Debug'">$(DefineConstants);SEPREADERTRACE</DefineConstants>-->
   </PropertyGroup>
 
   <ItemGroup>
