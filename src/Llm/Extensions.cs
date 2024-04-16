@@ -1,9 +1,8 @@
 ﻿using System.Collections.Generic;
-using System.Runtime.InteropServices;
 
 namespace nietras.LargeLanguageModel;
 
-public static class Extensions
+internal static class Extensions
 {
     public static IEnumerable<(int i0, int i1)> Enumerate(int count0, int count1)
     {
