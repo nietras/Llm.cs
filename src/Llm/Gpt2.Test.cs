@@ -13,7 +13,7 @@ internal static partial class Gpt2
         var dataDirectory = Path.Combine(location!, "../../../");
         // build the GPT-2 model from a checkpoint
         GPT2 model;
-        gpt2_build_from_checkpoint(&model, dataDirectory + "gpt2_124M.bin");
+        BuildFromCheckpoint(&model, dataDirectory + "gpt2_124M.bin");
 
         int C = model.config.channels;
         int V = model.config.vocab_size;
@@ -35,7 +35,7 @@ internal static partial class Gpt2
         Log($"seq_len: {T}");
 
         ParameterTensors expected_grads;
-        float* expected_grads_memory = malloc_and_point_parameters(&expected_grads, model.param_sizes);
+        float* expected_grads_memory = AllocateAndPointParameters(&expected_grads, model.param_sizes);
 
         // inputs and expected outputs, only used for error checking
         int* x = malloc<int>(B * T);
@@ -61,9 +61,9 @@ internal static partial class Gpt2
         {
             stopwatch.Restart();
 
-            gpt2_forward(&model, x, y, B, T);
-            gpt2_zero_grad(&model);
-            gpt2_backward(&model);
+            Forward(&model, x, y, B, T);
+            ZeroGrad(&model);
+            Backward(&model);
 
             double time_elapsed_s = stopwatch.Elapsed.TotalSeconds;
 
@@ -126,7 +126,7 @@ internal static partial class Gpt2
                 }
             }
 
-            gpt2_update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.01f, step + 1);
+            Update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.01f, step + 1);
 
             // print the timing information at the end
             Log($"step {step}: loss {model.mean_loss} (took {time_elapsed_s * 1000} ms)");
@@ -168,7 +168,7 @@ internal static partial class Gpt2
         free(expected_logits);
         free(expected_loss);
         free(expected_grads_memory);
-        gpt2_free(&model);
+        Free(&model);
     }
 
     // poor man's tensor checker

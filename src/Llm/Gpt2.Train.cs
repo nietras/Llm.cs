@@ -14,7 +14,7 @@ internal static partial class Gpt2
         var dataDirectory = Path.Combine(location!, "../../../");
         // build the GPT-2 model from a checkpoint
         GPT2 model;
-        gpt2_build_from_checkpoint(&model, dataDirectory + "gpt2_124M.bin");
+        BuildFromCheckpoint(&model, dataDirectory + "gpt2_124M.bin");
 
         // build the DataLoaders from tokens files. for now use tiny_shakespeare if available, else tiny_stories
         var tiny_stories_train = dataDirectory + "TinyStories_train.bin";
@@ -51,7 +51,7 @@ internal static partial class Gpt2
                 for (int i = 0; i < val_num_batches; i++)
                 {
                     val_loader.dataloader_next_batch();
-                    gpt2_forward(&model, val_loader.inputs, val_loader.targets, B, T);
+                    Forward(&model, val_loader.inputs, val_loader.targets, B, T);
                     val_loss += model.mean_loss;
                 }
                 val_loss /= val_num_batches;
@@ -68,7 +68,7 @@ internal static partial class Gpt2
                     // for each t, we re-compute all activations between 0 and t
                     // leaving this alone because you want separate code for inference anyway
                     // the inference here is just for sanity checking purposes
-                    gpt2_forward(&model, gen_tokens, null, 1, t);
+                    Forward(&model, gen_tokens, null, 1, t);
                     float* probs = model.acts.probs + (t - 1) * model.config.vocab_size;
                     float coin = random_f32(&rng_state);
                     int next_token = sample_mult(probs, model.config.vocab_size, coin);
@@ -85,15 +85,15 @@ internal static partial class Gpt2
             // do a training step
             stopwatch.Restart();
             train_loader.dataloader_next_batch();
-            gpt2_forward(&model, train_loader.inputs, train_loader.targets, B, T);
-            gpt2_zero_grad(&model);
-            gpt2_backward(&model);
-            gpt2_update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, step + 1);
+            Forward(&model, train_loader.inputs, train_loader.targets, B, T);
+            ZeroGrad(&model);
+            Backward(&model);
+            Update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, step + 1);
             double time_elapsed_ms = stopwatch.Elapsed.TotalMilliseconds;
             Log($"step {step}: train loss {model.mean_loss} (took {time_elapsed_ms} ms)");
         }
 
         // free
-        gpt2_free(&model);
+        Free(&model);
     }
 }

@@ -9,7 +9,7 @@ public static partial class Llm
     // all the individual layers' forward and backward passes
     // B = batch_size, T = sequence_length, C = channels, V = vocab_size
 
-    public unsafe static void encoder_forward(float* output,
+    public unsafe static void EncoderForward(float* output,
                        int* inp, float* wte, float* wpe,
                        int B, int T, int C)
     {
@@ -38,7 +38,7 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void encoder_backward(float* dwte, float* dwpe,
+    public unsafe static void EncoderBackward(float* dwte, float* dwpe,
                           float* dout, int* inp,
                           int B, int T, int C)
     {
@@ -60,7 +60,7 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void layernorm_forward(float* output, float* mean, float* rstd,
+    public unsafe static void LayerNormForward(float* output, float* mean, float* rstd,
                            float* inp, float* weight, float* bias,
                            int B, int T, int C)
     {
@@ -108,7 +108,7 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void layernorm_backward(float* dinp, float* dweight, float* dbias,
+    public unsafe static void LayerNormBackward(float* dinp, float* dweight, float* dbias,
                             float* dout, float* inp, float* weight, float* mean, float* rstd,
                             int B, int T, int C)
     {
@@ -156,7 +156,7 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void matmul_forward(float* output,
+    public unsafe static void MatMulForward(float* output,
                         float* inp, float* weight, float* bias,
                         int B, int T, int C, int OC)
     {
@@ -184,7 +184,7 @@ public static partial class Llm
         });
     }
 
-    public unsafe static void matmul_backward(float* dinp, float* dweight, float* dbias,
+    public unsafe static void MatMulBackward(float* dinp, float* dweight, float* dbias,
                          float* dout, float* inp, float* weight,
                          int B, int T, int C, int OC)
     {
@@ -232,7 +232,7 @@ public static partial class Llm
         });
     }
 
-    public unsafe static void attention_forward(float* output, float* preatt, float* att,
+    public unsafe static void AttentionForward(float* output, float* preatt, float* att,
                            float* inp,
                            int B, int T, int C, int NH)
     {
@@ -318,7 +318,7 @@ public static partial class Llm
         });
     }
 
-    public unsafe static void attention_backward(float* dinp, float* dpreatt, float* datt,
+    public unsafe static void AttentionBackward(float* dinp, float* dpreatt, float* datt,
                             float* dout, float* inp, float* att,
                             int B, int T, int C, int NH)
     {
@@ -389,7 +389,7 @@ public static partial class Llm
     }
 
     static readonly float GELU_SCALING_FACTOR = MathF.Sqrt(2.0f / MathF.PI);
-    public unsafe static void gelu_forward(float* output, float* inp, int N)
+    public unsafe static void GeLUForward(float* output, float* inp, int N)
     {
         // (approximate) GeLU elementwise non-linearity in the MLP block of Transformer
         for (int i = 0; i < N; i++)
@@ -400,7 +400,7 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void gelu_backward(float* dinp, float* inp, float* dout, int N)
+    public unsafe static void GeLUBackward(float* dinp, float* inp, float* dout, int N)
     {
         for (int i = 0; i < N; i++)
         {
@@ -415,7 +415,7 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void residual_forward(float* output, float* inp1, float* inp2, int N)
+    public unsafe static void ResidualForward(float* output, float* inp1, float* inp2, int N)
     {
         for (int i = 0; i < N; i++)
         {
@@ -423,7 +423,7 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void residual_backward(float* dinp1, float* dinp2, float* dout, int N)
+    public unsafe static void ResidualBackward(float* dinp1, float* dinp2, float* dout, int N)
     {
         for (int i = 0; i < N; i++)
         {
@@ -432,7 +432,7 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void softmax_forward(float* probs, float* logits, int B, int T, int V)
+    public unsafe static void SoftmaxForward(float* probs, float* logits, int B, int T, int V)
     {
         // output: probs are (B,T,V) of the probabilities (sums to 1.0 in each b,t position)
         // input: logits is (B,T,V) of the unnormalized log probabilities
@@ -467,7 +467,7 @@ public static partial class Llm
         });
     }
 
-    public unsafe static void crossentropy_forward(float* losses,
+    public unsafe static void CrossEntropyForward(float* losses,
                               float* probs, int* targets,
                               int B, int T, int V)
     {
@@ -486,7 +486,7 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void crossentropy_softmax_backward(float* dlogits,
+    public unsafe static void CrossEntropySoftmaxBackward(float* dlogits,
                                float* dlosses, float* probs, int* targets,
                                int B, int T, int V)
     {
