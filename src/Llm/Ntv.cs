@@ -6,7 +6,7 @@ using Microsoft.Win32.SafeHandles;
 namespace nietras.LargeLanguageModel;
 
 [DebuggerDisplay("Count = {Count} ByteCount = {ByteCount} Ptr = {Ptr:X}")]
-public unsafe class Ntv<T> : SafeHandleZeroOrMinusOneIsInvalid
+internal unsafe class Ntv<T> : SafeHandleZeroOrMinusOneIsInvalid
     where T : unmanaged
 {
     const int Alignment = 64;

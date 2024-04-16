@@ -4,7 +4,7 @@ using System.Reflection;
 
 namespace nietras.LargeLanguageModel;
 
-public static partial class Gpt2
+internal static partial class Gpt2
 {
     // ----------------------------------------------------------------------------
     // main training loop
