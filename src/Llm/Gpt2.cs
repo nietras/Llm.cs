@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using static nietras.LargeLanguageModel.Llm;
 
@@ -37,7 +36,7 @@ internal static partial class Gpt2
     }
 
     // allocate memory for the parameters and point the individual tensors to the right places
-    public unsafe static float* malloc_and_point_parameters(ParameterTensors* parameters, long* param_sizes)
+    public unsafe static float* AllocateAndPointParameters(ParameterTensors* parameters, long* param_sizes)
     {
         long num_parameters = 0;
         for (long i = 0; i < NUM_PARAMETER_TENSORS; i++)
@@ -102,7 +101,7 @@ internal static partial class Gpt2
         public float* losses; // (B, T)
     }
 
-    public unsafe static float* malloc_and_point_activations(ActivationTensors* acts, long* act_sizes)
+    public unsafe static float* AllocateAndPointActivations(ActivationTensors* acts, long* act_sizes)
     {
         long num_activations = 0;
         for (long i = 0; i < NUM_ACTIVATION_TENSORS; i++)
@@ -183,7 +182,7 @@ internal static partial class Gpt2
         public float mean_loss; // after a forward pass with targets, will be populated with the mean loss
     }
 
-    public unsafe static void gpt2_build_from_checkpoint(GPT2* model, string checkpoint_path)
+    public unsafe static void BuildFromCheckpoint(GPT2* model, string checkpoint_path)
     {
         // read in model from a checkpoint file
         using var model_file = File.OpenRead(checkpoint_path);
@@ -236,8 +235,8 @@ internal static partial class Gpt2
         model->num_parameters = num_parameters;
 
         // read in all the parameters from file
-        model->params_memory = malloc_and_point_parameters(&model->parameters, model->param_sizes);
-        ReadExactlyUnmanaged(model_file, model->params_memory, num_parameters);
+        model->params_memory = AllocateAndPointParameters(&model->parameters, model->param_sizes);
+        Extensions.ReadExactlyUnmanaged(model_file, model->params_memory, num_parameters);
 
         // other inits
         model->acts_memory = null;
@@ -252,7 +251,7 @@ internal static partial class Gpt2
         model->mean_loss = -1.0f; // -1.0f will designate no loss
     }
 
-    static unsafe void gpt2_forward(GPT2* model, int* inputs, int* targets, int B, int T)
+    static unsafe void Forward(GPT2* model, int* inputs, int* targets, int B, int T)
     {
         // targets are optional and could be null
 
@@ -305,7 +304,7 @@ internal static partial class Gpt2
             }
             Log($"num_activations: {num_activations}");
             model->num_activations = num_activations;
-            model->acts_memory = malloc_and_point_activations(&model->acts, model->act_sizes);
+            model->acts_memory = AllocateAndPointActivations(&model->acts, model->act_sizes);
             // also create memory for caching inputs and targets
             model->inputs = malloc<int>(B * T);
             model->targets = malloc<int>(B * T); // might be unused if we never have targets but it's small
@@ -404,13 +403,13 @@ internal static partial class Gpt2
         }
     }
 
-    static unsafe void gpt2_zero_grad(GPT2* model)
+    static unsafe void ZeroGrad(GPT2* model)
     {
         if (model->grads_memory != null) { memset(model->grads_memory, model->num_parameters); }
         if (model->grads_acts_memory != null) { memset(model->grads_acts_memory, model->num_activations); }
     }
 
-    static unsafe void gpt2_backward(GPT2* model)
+    static unsafe void Backward(GPT2* model)
     {
 
         // double check we forwarded previously, with targets
@@ -422,9 +421,9 @@ internal static partial class Gpt2
         // lazily allocate the memory for gradients of the weights and activations, if needed
         if (model->grads_memory == null)
         {
-            model->grads_memory = malloc_and_point_parameters(&model->grads, model->param_sizes);
-            model->grads_acts_memory = malloc_and_point_activations(&model->grads_acts, model->act_sizes);
-            gpt2_zero_grad(model);
+            model->grads_memory = AllocateAndPointParameters(&model->grads, model->param_sizes);
+            model->grads_acts_memory = AllocateAndPointActivations(&model->grads_acts, model->act_sizes);
+            ZeroGrad(model);
         }
 
         // convenience shortcuts
@@ -521,7 +520,7 @@ internal static partial class Gpt2
         EncoderBackward(grads.wte, grads.wpe, grads_acts.encoded, model->inputs, B, T, C);
     }
 
-    static unsafe void gpt2_update(GPT2* model, float learning_rate, float beta1, float beta2, float eps, float weight_decay, int t)
+    static unsafe void Update(GPT2* model, float learning_rate, float beta1, float beta2, float eps, float weight_decay, int t)
     {
         // reference: https://pytorch.org/docs/stable/generated/torch.optim.AdamW.html
 
@@ -552,7 +551,7 @@ internal static partial class Gpt2
         }
     }
 
-    static unsafe void gpt2_free(GPT2* model)
+    static unsafe void Free(GPT2* model)
     {
         free(model->params_memory);
         free(model->grads_memory);
@@ -726,30 +725,5 @@ internal static partial class Gpt2
         return n - 1; // in case of rounding errors
     }
 
-
-    static unsafe void ReadExactlyUnmanaged<T>(this FileStream file, Span<T> values)
-        where T : unmanaged
-    {
-        fixed (T* ptr = values)
-        {
-            ReadExactlyUnmanaged(file, ptr, values.Length);
-        }
-    }
-
-    static unsafe void ReadExactlyUnmanaged<T>(this FileStream file, T* values, long count)
-        where T : unmanaged
-    {
-        Span<T> buffer = stackalloc T[(256 * 1024) / Unsafe.SizeOf<T>()];
-        var totalReadCount = 0;
-        while (totalReadCount < count)
-        {
-            var countToRead = (int)Math.Min(buffer.Length, count - totalReadCount);
-            var bufferToRead = buffer.Slice(0, countToRead);
-            var span = MemoryMarshal.Cast<T, byte>(bufferToRead);
-            file.ReadExactly(span);
-            bufferToRead.CopyTo(new Span<T>(values + totalReadCount, countToRead));
-            totalReadCount += countToRead;
-        }
-    }
 
 }
