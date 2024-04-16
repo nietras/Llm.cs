@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 
 namespace nietras.LargeLanguageModel;
 
@@ -169,26 +170,24 @@ public static partial class Gpt2
         // OC is short for "output channels"
         // inp is (B,T,C), weight is (OC, C), bias is (OC)
         // output will be (B,T,OC)
-        int b;
-#pragma omp parallel for collapse(2)
-        for (b = 0; b < B; b++)
+        //(int b;
+        //#pragma omp parallel for collapse(2)
+        Parallel.ForEach(Extensions.Enumerate(B, T), tuple =>
         {
-            for (int t = 0; t < T; t++)
+            var (b, t) = tuple;
+            float* out_bt = output + b * T * OC + t * OC;
+            float* inp_bt = inp + b * T * C + t * C;
+            for (int o = 0; o < OC; o++)
             {
-                float* out_bt = output + b * T * OC + t * OC;
-                float* inp_bt = inp + b * T * C + t * C;
-                for (int o = 0; o < OC; o++)
+                float val = (bias != null) ? bias[o] : 0.0f;
+                float* wrow = weight + o * C;
+                for (int i = 0; i < C; i++)
                 {
-                    float val = (bias != null) ? bias[o] : 0.0f;
-                    float* wrow = weight + o * C;
-                    for (int i = 0; i < C; i++)
-                    {
-                        val += inp_bt[i] * wrow[i];
-                    }
-                    out_bt[o] = val;
+                    val += inp_bt[i] * wrow[i];
                 }
+                out_bt[o] = val;
             }
-        }
+        });
     }
 
     public unsafe static void matmul_backward(float* dinp, float* dweight, float* dbias,
@@ -200,27 +199,26 @@ public static partial class Gpt2
         // but that doesn't afford an efficient parallelization strategy
 
         // backward into inp first, parallelize over B,T
-#pragma omp parallel for collapse(2)
-        for (int b = 0; b < B; b++)
+        //#pragma omp parallel for collapse(2)
+        // TODO: Parallize over B+T too not just B
+        Parallel.ForEach(Extensions.Enumerate(B, T), tuple =>
         {
-            for (int t = 0; t < T; t++)
+            var (b, t) = tuple;
+            float* dout_bt = dout + b * T * OC + t * OC;
+            float* dinp_bt = dinp + b * T * C + t * C;
+            for (int o = 0; o < OC; o++)
             {
-                float* dout_bt = dout + b * T * OC + t * OC;
-                float* dinp_bt = dinp + b * T * C + t * C;
-                for (int o = 0; o < OC; o++)
+                float* wrow = weight + o * C;
+                float d = dout_bt[o];
+                for (int i = 0; i < C; i++)
                 {
-                    float* wrow = weight + o * C;
-                    float d = dout_bt[o];
-                    for (int i = 0; i < C; i++)
-                    {
-                        dinp_bt[i] += wrow[i] * d;
-                    }
+                    dinp_bt[i] += wrow[i] * d;
                 }
             }
-        }
+        });
         // backward into weight/bias, parallelize over output channels OC
-#pragma omp parallel for
-        for (int o = 0; o < OC; o++)
+        //#pragma omp parallel for
+        Parallel.For(0, OC, o =>
         {
             for (int b = 0; b < B; b++)
             {
@@ -237,7 +235,7 @@ public static partial class Gpt2
                     }
                 }
             }
-        }
+        });
     }
 
     public unsafe static void attention_forward(float* output, float* preatt, float* att,
@@ -255,80 +253,75 @@ public static partial class Gpt2
         int hs = C / NH; // head size
         float scale = 1.0f / MathF.Sqrt(hs);
 
-        int b;
-#pragma omp parallel for collapse(3)
-        for (b = 0; b < B; b++)
+        //#pragma omp parallel for collapse(3)
+        Parallel.ForEach(Extensions.Enumerate(B, T, NH), tuple =>
         {
-            for (int t = 0; t < T; t++)
+            var (b, t, h) = tuple;
+
+            float* query_t = inp + b * T * C3 + t * C3 + h * hs;
+            float* preatt_bth = preatt + b * NH * T * T + h * T * T + t * T;
+            float* att_bth = att + b * NH * T * T + h * T * T + t * T;
+
+            // pass 1: calculate query dot key and maxval
+            float maxval = -10000.0f; // TODO something better
+            for (int t2 = 0; t2 <= t; t2++)
             {
-                for (int h = 0; h < NH; h++)
+                float* key_t2 = inp + b * T * C3 + t2 * C3 + h * hs + C; // +C because it's key
+
+                // (query_t) dot (key_t2)
+                float val = 0.0f;
+                for (int i = 0; i < hs; i++)
                 {
-                    float* query_t = inp + b * T * C3 + t * C3 + h * hs;
-                    float* preatt_bth = preatt + b * NH * T * T + h * T * T + t * T;
-                    float* att_bth = att + b * NH * T * T + h * T * T + t * T;
+                    val += query_t[i] * key_t2[i];
+                }
+                val *= scale;
+                if (val > maxval)
+                {
+                    maxval = val;
+                }
 
-                    // pass 1: calculate query dot key and maxval
-                    float maxval = -10000.0f; // TODO something better
-                    for (int t2 = 0; t2 <= t; t2++)
-                    {
-                        float* key_t2 = inp + b * T * C3 + t2 * C3 + h * hs + C; // +C because it's key
+                preatt_bth[t2] = val;
+            }
 
-                        // (query_t) dot (key_t2)
-                        float val = 0.0f;
-                        for (int i = 0; i < hs; i++)
-                        {
-                            val += query_t[i] * key_t2[i];
-                        }
-                        val *= scale;
-                        if (val > maxval)
-                        {
-                            maxval = val;
-                        }
+            // pass 2: calculate the exp and keep track of sum
+            // maxval is being calculated and subtracted only for numerical stability
+            float expsum = 0.0f;
+            for (int t2 = 0; t2 <= t; t2++)
+            {
+                float expv = MathF.Exp(preatt_bth[t2] - maxval);
+                expsum += expv;
+                att_bth[t2] = expv;
+            }
+            float expsum_inv = expsum == 0.0f ? 0.0f : 1.0f / expsum;
 
-                        preatt_bth[t2] = val;
-                    }
-
-                    // pass 2: calculate the exp and keep track of sum
-                    // maxval is being calculated and subtracted only for numerical stability
-                    float expsum = 0.0f;
-                    for (int t2 = 0; t2 <= t; t2++)
-                    {
-                        float expv = MathF.Exp(preatt_bth[t2] - maxval);
-                        expsum += expv;
-                        att_bth[t2] = expv;
-                    }
-                    float expsum_inv = expsum == 0.0f ? 0.0f : 1.0f / expsum;
-
-                    // pass 3: normalize to get the softmax
-                    for (int t2 = 0; t2 < T; t2++)
-                    {
-                        if (t2 <= t)
-                        {
-                            att_bth[t2] *= expsum_inv;
-                        }
-                        else
-                        {
-                            // causal attention mask. not strictly necessary to set to zero here
-                            // only doing this explicitly for debugging and checking to PyTorch
-                            att_bth[t2] = 0.0f;
-                        }
-                    }
-
-                    // pass 4: accumulate weighted values into the output of attention
-                    float* out_bth = output + b * T * C + t * C + h * hs;
-                    for (int i = 0; i < hs; i++) { out_bth[i] = 0.0f; }
-                    for (int t2 = 0; t2 <= t; t2++)
-                    {
-                        float* value_t2 = inp + b * T * C3 + t2 * C3 + h * hs + C * 2; // +C*2 because it's value
-                        float att_btht2 = att_bth[t2];
-                        for (int i = 0; i < hs; i++)
-                        {
-                            out_bth[i] += att_btht2 * value_t2[i];
-                        }
-                    }
+            // pass 3: normalize to get the softmax
+            for (int t2 = 0; t2 < T; t2++)
+            {
+                if (t2 <= t)
+                {
+                    att_bth[t2] *= expsum_inv;
+                }
+                else
+                {
+                    // causal attention mask. not strictly necessary to set to zero here
+                    // only doing this explicitly for debugging and checking to PyTorch
+                    att_bth[t2] = 0.0f;
                 }
             }
-        }
+
+            // pass 4: accumulate weighted values into the output of attention
+            float* out_bth = output + b * T * C + t * C + h * hs;
+            for (int i = 0; i < hs; i++) { out_bth[i] = 0.0f; }
+            for (int t2 = 0; t2 <= t; t2++)
+            {
+                float* value_t2 = inp + b * T * C3 + t2 * C3 + h * hs + C * 2; // +C*2 because it's value
+                float att_btht2 = att_bth[t2];
+                for (int i = 0; i < hs; i++)
+                {
+                    out_bth[i] += att_btht2 * value_t2[i];
+                }
+            }
+        });
     }
 
     public unsafe static void attention_backward(float* dinp, float* dpreatt, float* datt,
@@ -449,37 +442,35 @@ public static partial class Gpt2
     {
         // output: probs are (B,T,V) of the probabilities (sums to 1.0 in each b,t position)
         // input: logits is (B,T,V) of the unnormalized log probabilities
-        int b;
-#pragma omp parallel for collapse(2)
-        for (b = 0; b < B; b++)
+        //#pragma omp parallel for collapse(2)
+        //for (b = 0; b < B; b++)
+        Parallel.ForEach(Extensions.Enumerate(B, T), tuple =>
         {
-            for (int t = 0; t < T; t++)
-            {
-                // probs <- softmax(logits)
-                float* logits_bt = logits + b * T * V + t * V;
-                float* probs_bt = probs + b * T * V + t * V;
+            var (b, t) = tuple;
+            // probs <- softmax(logits)
+            float* logits_bt = logits + b * T * V + t * V;
+            float* probs_bt = probs + b * T * V + t * V;
 
-                // maxval is only calculated and subtracted for numerical stability
-                float maxval = -10000.0f; // TODO something better
-                for (int i = 0; i < V; i++)
+            // maxval is only calculated and subtracted for numerical stability
+            float maxval = -10000.0f; // TODO something better
+            for (int i = 0; i < V; i++)
+            {
+                if (logits_bt[i] > maxval)
                 {
-                    if (logits_bt[i] > maxval)
-                    {
-                        maxval = logits_bt[i];
-                    }
-                }
-                float sum = 0.0f;
-                for (int i = 0; i < V; i++)
-                {
-                    probs_bt[i] = MathF.Exp(logits_bt[i] - maxval);
-                    sum += probs_bt[i];
-                }
-                for (int i = 0; i < V; i++)
-                {
-                    probs_bt[i] /= sum;
+                    maxval = logits_bt[i];
                 }
             }
-        }
+            float sum = 0.0f;
+            for (int i = 0; i < V; i++)
+            {
+                probs_bt[i] = MathF.Exp(logits_bt[i] - maxval);
+                sum += probs_bt[i];
+            }
+            for (int i = 0; i < V; i++)
+            {
+                probs_bt[i] /= sum;
+            }
+        });
     }
 
     public unsafe static void crossentropy_forward(float* losses,
