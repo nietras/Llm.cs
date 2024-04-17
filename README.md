@@ -1,4 +1,4 @@
-﻿# llm.cs - C# port of @karpathy [llm.c](https://github.com/karpathy/llm.c)
+﻿# Llm.cs - C# port of @karpathy [llm.c](https://github.com/karpathy/llm.c)
 ![.NET](https://img.shields.io/badge/net8.0-5C2D91?logo=.NET&labelColor=gray)
 ![C#](https://img.shields.io/badge/12.0-239120?logo=csharp&logoColor=white&labelColor=gray)
 ![Lines of code](https://tokei.rs/b1/github/nietras/llm.cs?category=code)
