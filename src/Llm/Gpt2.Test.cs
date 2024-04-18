@@ -1,26 +1,23 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 
 namespace nietras.LargeLanguageModel;
 
 internal static partial class Gpt2
 {
-    public static unsafe void Test()
+    public static unsafe void Test(string dataDirectory)
     {
-        var location = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-        var dataDirectory = Path.Combine(location!, "../../../");
         // build the GPT-2 model from a checkpoint
         GPT2 model;
-        BuildFromCheckpoint(&model, dataDirectory + "gpt2_124M.bin");
+        BuildFromCheckpoint(&model, dataDirectory + ModelBinaryFileName);
 
         int C = model.config.channels;
         int V = model.config.vocab_size;
         int maxT = model.config.max_seq_len;
         int L = model.config.num_layers;
 
-        using var state_file = File.OpenRead(dataDirectory + "gpt2_124M_debug_state.bin");
+        using var state_file = File.OpenRead(dataDirectory + ModelDebugBinaryFileName);
         Span<int> state_header = stackalloc int[256];
         // read span from model_file
         state_file.ReadExactlyUnmanaged(state_header);
