@@ -1,26 +1,47 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 
 namespace nietras.LargeLanguageModel;
 
 internal static partial class Gpt2
 {
+    const string ModelBinaryFileName = "gpt2_124M.bin";
+    const string ModelDebugBinaryFileName = "gpt2_124M_debug_state.bin";
+
+    const string TokenizerBinaryFileName = "gpt2_tokenizer.bin";
+
+    const string DataTinyStoriesTrainBinaryFileName = "TinyStories_train.bin";
+    const string DataTinyStoriesValidationBinaryFileName = "TinyStories_val.bin";
+
+    const string TinyShakespeareTrainBinaryFileName = "tiny_shakespeare_train.bin";
+    const string TinyShakespeareValidationBinaryFileName = "tiny_shakespeare_val.bin";
+
+    internal static readonly IReadOnlyList<string> FileNames = [
+        ModelBinaryFileName,
+        ModelDebugBinaryFileName,
+        TokenizerBinaryFileName,
+        //DataTinyStoriesTrainBinaryFileName,
+        //DataTinyStoriesValidationBinaryFileName,
+        TinyShakespeareTrainBinaryFileName,
+        TinyShakespeareValidationBinaryFileName];
+
+    internal static string RemoteUrl(string fileName) =>
+        @$"https://huggingface.co/datasets/nietras/llm.bin/resolve/main/{fileName}?download=true";
+
     // ----------------------------------------------------------------------------
     // main training loop
-    public static unsafe void Train()
+    public static unsafe void Train(string dataDirectory)
     {
-        var location = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-        var dataDirectory = Path.Combine(location!, "../../../");
         // build the GPT-2 model from a checkpoint
         GPT2 model;
-        BuildFromCheckpoint(&model, dataDirectory + "gpt2_124M.bin");
+        BuildFromCheckpoint(&model, dataDirectory + ModelBinaryFileName);
 
         // build the DataLoaders from tokens files. for now use tiny_shakespeare if available, else tiny_stories
-        var tiny_stories_train = dataDirectory + "TinyStories_train.bin";
-        var tiny_stories_val = dataDirectory + "TinyStories_val.bin";
-        var tiny_shakespeare_train = dataDirectory + "tiny_shakespeare_train.bin";
-        var tiny_shakespeare_val = dataDirectory + "tiny_shakespeare_val.bin";
+        var tiny_stories_train = dataDirectory + DataTinyStoriesTrainBinaryFileName;
+        var tiny_stories_val = dataDirectory + DataTinyStoriesValidationBinaryFileName;
+        var tiny_shakespeare_train = dataDirectory + TinyShakespeareTrainBinaryFileName;
+        var tiny_shakespeare_val = dataDirectory + TinyShakespeareValidationBinaryFileName;
         var train_tokens = File.Exists(tiny_shakespeare_train) ? tiny_shakespeare_train : tiny_stories_train;
         var val_tokens = File.Exists(tiny_shakespeare_val) ? tiny_shakespeare_val : tiny_stories_val;
         int B = 4; // batch size 4 (i.e. 4 independent token sequences will be trained on)
