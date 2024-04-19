@@ -17,10 +17,13 @@ internal static partial class Gpt2
     const string TinyShakespeareTrainBinaryFileName = "tiny_shakespeare_train.bin";
     const string TinyShakespeareValidationBinaryFileName = "tiny_shakespeare_val.bin";
 
-    internal static readonly IReadOnlyList<string> FileNames =
-        [ModelBinaryFileName, ModelDebugBinaryFileName, TokenizerBinaryFileName,
-         //DataTinyStoriesTrainBinaryFileName, DataTinyStoriesValidationBinaryFileName,
-         TinyShakespeareTrainBinaryFileName, TinyShakespeareValidationBinaryFileName];
+    internal static readonly IReadOnlyList<string> FileNames = [
+        ModelBinaryFileName,
+        ModelDebugBinaryFileName,
+        TokenizerBinaryFileName,
+        //DataTinyStoriesTrainBinaryFileName, DataTinyStoriesValidationBinaryFileName,
+        TinyShakespeareTrainBinaryFileName,
+        TinyShakespeareValidationBinaryFileName];
 
     internal static string RemoteUrl(string fileName) =>
         @$"https://huggingface.co/datasets/nietras/llm.bin/resolve/main/{fileName}?download=true";
