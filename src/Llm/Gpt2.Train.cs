@@ -21,7 +21,8 @@ internal static partial class Gpt2
         ModelBinaryFileName,
         ModelDebugBinaryFileName,
         TokenizerBinaryFileName,
-        //DataTinyStoriesTrainBinaryFileName, DataTinyStoriesValidationBinaryFileName,
+        //DataTinyStoriesTrainBinaryFileName,
+        //DataTinyStoriesValidationBinaryFileName,
         TinyShakespeareTrainBinaryFileName,
         TinyShakespeareValidationBinaryFileName];
 
