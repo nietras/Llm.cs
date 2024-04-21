@@ -341,8 +341,8 @@ public static partial class Llm
         // att/datt/dpreatt are (batchSize, headCount, tokenCount, tokenCount)
         // doutput is (batchSize, tokenCount, channelCount)
         int C3 = channelCount * 3;
-        int hs = channelCount / headCount; // head size
-        float scale = 1.0f / MathF.Sqrt(hs);
+        int headSize = channelCount / headCount; // head size
+        float scale = 1.0f / MathF.Sqrt(headSize);
 
         for (int b = 0; b < batchSize; b++)
         {
@@ -353,16 +353,16 @@ public static partial class Llm
                     float* att_bth = att + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
                     float* datt_bth = datt + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
                     float* dpreatt_bth = dpreatt + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
-                    float* dquery_t = dinput + b * tokenCount * C3 + t * C3 + h * hs;
-                    float* query_t = input + b * tokenCount * C3 + t * C3 + h * hs;
+                    float* dquery_t = dinput + b * tokenCount * C3 + t * C3 + h * headSize;
+                    float* query_t = input + b * tokenCount * C3 + t * C3 + h * headSize;
 
                     // backward pass 4, through the value accumulation
-                    float* doutput_bth = doutput + b * tokenCount * channelCount + t * channelCount + h * hs;
+                    float* doutput_bth = doutput + b * tokenCount * channelCount + t * channelCount + h * headSize;
                     for (int t2 = 0; t2 <= t; t2++)
                     {
-                        float* value_t2 = input + b * tokenCount * C3 + t2 * C3 + h * hs + channelCount * 2; // +channelCount*2 because it's value
-                        float* dvalue_t2 = dinput + b * tokenCount * C3 + t2 * C3 + h * hs + channelCount * 2;
-                        for (int i = 0; i < hs; i++)
+                        float* value_t2 = input + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount * 2; // +channelCount*2 because it's value
+                        float* dvalue_t2 = dinput + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount * 2;
+                        for (int i = 0; i < headSize; i++)
                         {
                             // in the forward pass this was:
                             // output_bth[i] += att_bth[t2] * value_t2[i];
@@ -387,9 +387,9 @@ public static partial class Llm
                     // backward pass 1, the query @ key matmul
                     for (int t2 = 0; t2 <= t; t2++)
                     {
-                        float* key_t2 = input + b * tokenCount * C3 + t2 * C3 + h * hs + channelCount; // +channelCount because it's key
-                        float* dkey_t2 = dinput + b * tokenCount * C3 + t2 * C3 + h * hs + channelCount; // +channelCount because it's key
-                        for (int i = 0; i < hs; i++)
+                        float* key_t2 = input + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount; // +channelCount because it's key
+                        float* dkey_t2 = dinput + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount; // +channelCount because it's key
+                        for (int i = 0; i < headSize; i++)
                         {
                             // in the forward pass this was:
                             // preatt_bth[t2] += (query_t[i] * key_t2[i]) * scale;
