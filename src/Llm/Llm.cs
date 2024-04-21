@@ -3,12 +3,12 @@ using System.Threading.Tasks;
 
 namespace nietras.LargeLanguageModel;
 
+#pragma warning disable IDE0007 // Use implicit type
+
+// all the individual layers' forward and backward passes
+// batchSize = B, tokenCount = T, channelCount = C, vocabularySize = V
 public static partial class Llm
 {
-    // ----------------------------------------------------------------------------
-    // all the individual layers' forward and backward passes
-    // batchSize = batch_size, tokenCount = sequence_length, channelCount = channels, vocabularySize = vocab_size
-
     public unsafe static void EncoderForward(float* output,
                        int* input, float* wte, float* wpe,
                        int batchSize, int tokenCount, int channelCount)
@@ -257,7 +257,7 @@ public static partial class Llm
 
             // pass 1: calculate query dot key and maxval
             float maxval = float.MinValue;
-            for (int t2 = 0; t2 <= t; t2++)
+            for (int t2 = 0; t2 <= t; t2++) // note: includes t == tokenCount
             {
                 float* key_t2 = input + b * tokenCount * C3 + t2 * C3 + h * hs + channelCount; // +channelCount because it's key
 
