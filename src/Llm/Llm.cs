@@ -243,15 +243,31 @@ public static partial class Llm
         // every other operation is applied at every (b,t) position independently
         // (and of course, no layer mixes information across batch)
         int C3 = channelCount * 3;
-        int hs = channelCount / headCount; // head size
-        float scale = 1.0f / MathF.Sqrt(hs);
+        int headSize = channelCount / headCount; // head size
+        float scale = 1.0f / MathF.Sqrt(headSize);
+
+        // Scaled Dot-Product Attention as ASCII art:
+        //
+        //          MatMul
+        //          ↑    ↑
+        //    Softmax    ↑
+        //      ↑        ↑
+        //    Mask       ↑
+        //      ↑        ↑
+        //    Scale      ↑
+        //      ↑        ↑
+        //    MatMul     ↑
+        //    ↑    ↑     ↑
+        //    Q    K     V
+        //
+        // Code below works on each individual batch sample, token, and head in parallel
 
         //#pragma omp parallel for collapse(3)
         Parallel.ForEach(Extensions.Enumerate(batchSize, tokenCount, headCount), tuple =>
         {
             var (b, t, h) = tuple;
 
-            float* query_t = input + b * tokenCount * C3 + t * C3 + h * hs;
+            float* query_t = input + b * tokenCount * C3 + t * C3 + h * headSize;
             float* preatt_bth = preatt + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
             float* att_bth = att + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
 
@@ -259,11 +275,11 @@ public static partial class Llm
             float maxval = float.MinValue;
             for (int t2 = 0; t2 <= t; t2++) // note: includes t == tokenCount
             {
-                float* key_t2 = input + b * tokenCount * C3 + t2 * C3 + h * hs + channelCount; // +channelCount because it's key
+                float* key_t2 = input + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount; // +channelCount because it's key
 
                 // (query_t) dot (key_t2)
                 float val = 0.0f;
-                for (int i = 0; i < hs; i++)
+                for (int i = 0; i < headSize; i++)
                 {
                     val += query_t[i] * key_t2[i];
                 }
@@ -303,13 +319,13 @@ public static partial class Llm
             }
 
             // pass 4: accumulate weighted values into the output of attention
-            float* output_bth = output + b * tokenCount * channelCount + t * channelCount + h * hs;
-            for (int i = 0; i < hs; i++) { output_bth[i] = 0.0f; }
+            float* output_bth = output + b * tokenCount * channelCount + t * channelCount + h * headSize;
+            for (int i = 0; i < headSize; i++) { output_bth[i] = 0.0f; }
             for (int t2 = 0; t2 <= t; t2++)
             {
-                float* value_t2 = input + b * tokenCount * C3 + t2 * C3 + h * hs + channelCount * 2; // +channelCount*2 because it's value
+                float* value_t2 = input + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount * 2; // +channelCount*2 because it's value
                 float att_btht2 = att_bth[t2];
-                for (int i = 0; i < hs; i++)
+                for (int i = 0; i < headSize; i++)
                 {
                     output_bth[i] += att_btht2 * value_t2[i];
                 }
