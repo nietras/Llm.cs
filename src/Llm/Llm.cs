@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
 
 namespace nietras.LargeLanguageModel;
@@ -9,6 +10,8 @@ namespace nietras.LargeLanguageModel;
 // batchSize = B, tokenCount = T, channelCount = C, vocabularySize = V
 public static partial class Llm
 {
+    // Calling this "Encoder" is confusing as the other part of transformer
+    // architecture is an encoder. This should be renamed to "Embed".
     public unsafe static void EncoderForward(float* output,
                        int* input, float* wte, float* wpe,
                        int batchSize, int tokenCount, int channelCount)
@@ -244,6 +247,7 @@ public static partial class Llm
         // (and of course, no layer mixes information across batch)
         int C3 = channelCount * 3;
         int headSize = channelCount / headCount; // head size
+        Debug.Assert(channelCount == (headSize * headCount));
         float scale = 1.0f / MathF.Sqrt(headSize);
 
         // Scaled Dot-Product Attention as ASCII art:

@@ -48,8 +48,22 @@ internal static partial class Gpt2
         state_file.ReadExactlyUnmanaged(expected_grads_memory, model.num_parameters);
         state_file.Dispose();
 
+        // expected losses are as follows, from Python
+        float[] expected_losses = {
+            5.270007133483887f,
+            4.059706687927246f,
+            3.3751230239868164f,
+            2.8007826805114746f,
+            2.315382242202759f,
+            1.8490285873413086f,
+            1.3946564197540283f,
+            0.9991465210914612f,
+            0.6240804195404053f,
+            0.37651097774505615f
+        };
+
         // overall OK signal for the test
-        bool allok = true;
+        bool allOk = true;
 
         // let's do 10 training iterations, following the pytorch code
         float* losses = stackalloc float[10];
@@ -85,13 +99,13 @@ internal static partial class Gpt2
                 }
                 if (!logits_ok) { Log("NOT "); }
                 Log("OK (LOGITS)");
-                allok = allok && logits_ok;
+                allOk = allOk && logits_ok;
 
                 // compare the achieved loss
                 if (MathF.Abs(model.mean_loss - *expected_loss) >= 1e-2)
                 {
                     Log($"LOSS MISMATCH: {model.mean_loss} {*expected_loss}");
-                    allok = false;
+                    allOk = false;
                 }
                 else
                 {
@@ -119,45 +133,21 @@ internal static partial class Gpt2
                 gradoks[15] = check_tensor(grads.lnfb, expected_grads.lnfb, C, "dlnfb");
                 for (int i = 0; i < 16; i++)
                 {
-                    allok = allok && gradoks[i];
+                    allOk = allOk && gradoks[i];
                 }
             }
 
             Update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.01f, step + 1);
 
-            // print the timing information at the end
-            Log($"step {step}: loss {model.mean_loss} (took {time_elapsed_s * 1000} ms)");
             losses[step] = model.mean_loss;
+            var expectedLoss = expected_losses[step];
+            var lossOk = CheckLoss(model.mean_loss, expectedLoss);
+            allOk = allOk && lossOk;
+            // print the timing information at the end
+            Log($"step {step}: loss {model.mean_loss:F6} expected loss {expectedLoss:F6} ok {lossOk,5} (took {time_elapsed_s * 1000:F0} ms)");
         }
 
-        // expected losses are as follows, from Python
-        float[] expected_losses = {
-            5.270007133483887f,
-            4.059706687927246f,
-            3.3751230239868164f,
-            2.8007826805114746f,
-            2.315382242202759f,
-            1.8490285873413086f,
-            1.3946564197540283f,
-            0.9991465210914612f,
-            0.6240804195404053f,
-            0.37651097774505615f
-        };
-        // compare
-        for (int i = 0; i < 10; i++)
-        {
-            if (MathF.Abs(losses[i] - expected_losses[i]) >= 1e-2)
-            {
-                Log($"LOSS MISMATCH AT STEP {i}: {losses[i]} {expected_losses[i]}");
-                allok = false;
-            }
-            else
-            {
-                Log($"loss ok at step {i}: {losses[i]} {expected_losses[i]}");
-            }
-        }
-
-        Log($"overall okay: {allok}");
+        Log($"overall okay: {allOk}");
 
         // free everything
         free(x);
@@ -167,6 +157,8 @@ internal static partial class Gpt2
         free(expected_grads_memory);
         Free(&model);
     }
+
+    static bool CheckLoss(float a, float b) => MathF.Abs(a - b) < 0.01f;
 
     // poor man's tensor checker
     static unsafe bool check_tensor(float* a, float* b, int n, string label)

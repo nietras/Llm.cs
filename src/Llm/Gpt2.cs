@@ -6,6 +6,8 @@ using static nietras.LargeLanguageModel.Llm;
 
 namespace nietras.LargeLanguageModel;
 
+#pragma warning disable IDE0007 // Use implicit type
+
 internal static partial class Gpt2
 {
     static readonly Action<string> Log = t => { Console.WriteLine(t); Trace.WriteLine(t); };
@@ -110,7 +112,7 @@ internal static partial class Gpt2
         }
         float* acts_memory = malloc<float>(num_activations);
         float**[] ptrs = [
-        &acts->encoded,
+            &acts->encoded,
             &acts->ln1,
             &acts->ln1_mean,
             &acts->ln1_rstd,
