@@ -15,7 +15,64 @@
 
 ⭐ Please star this project if you like it. ⭐
 
-TODO
+## Getting Started
+
+* Install [.NET SDK](https://dotnet.microsoft.com/en-us/download) matching
+  version in [global.json](./global.json)
+* Restore and build the project (working directory where `Llm.sln`):
+  ```powershell
+  dotnet restore
+  dotnet build -c Release
+  ```
+* Run (currently defaults to running train "test"/verification):
+  ```powershell
+  dotnet run -c Release --project .\src\Llm\Llm.csproj
+  ```
+  NOTE: This will download binary files e.g. weights and input tokens from
+  [nietras/llm.bin](https://huggingface.co/datasets/nietras/llm.bin) from
+  Hugging Face. That is there is no need to run any Python here to get data.
+* Output should then be something like:
+  ```powershell
+  [GPT-2]
+  max_seq_len: 1024
+  vocab_size: 50257
+  num_layers: 12
+  num_heads: 12
+  channels: 768
+  num_parameters: 124439808
+  [State]
+  batch_size: 4
+  seq_len: 64
+  num_activations: 73323776
+  Logits           TENSOR OK
+  dwte             TENSOR OK
+  dwpe             TENSOR OK
+  dln1w            TENSOR OK
+  dln1b            TENSOR OK
+  dqkvw            TENSOR OK
+  dqkvb            TENSOR OK
+  dattprojw        TENSOR OK
+  dattprojb        TENSOR OK
+  dln2w            TENSOR OK
+  dln2b            TENSOR OK
+  dfcw             TENSOR OK
+  dfcb             TENSOR OK
+  dfcprojw         TENSOR OK
+  dfcprojb         TENSOR OK
+  dlnfw            TENSOR OK
+  dlnfb            TENSOR OK
+  step 0: loss 5.269890 expected loss 5.270007 OK   (took 4219 ms)
+  step 1: loss 4.059388 expected loss 4.059707 OK   (took 4099 ms)
+  step 2: loss 3.374212 expected loss 3.375123 OK   (took 4050 ms)
+  step 3: loss 2.800128 expected loss 2.800783 OK   (took 4073 ms)
+  step 4: loss 2.315312 expected loss 2.315382 OK   (took 4089 ms)
+  step 5: loss 1.849347 expected loss 1.849029 OK   (took 4052 ms)
+  step 6: loss 1.395217 expected loss 1.394656 OK   (took 4071 ms)
+  step 7: loss 0.998616 expected loss 0.999147 OK   (took 4057 ms)
+  step 8: loss 0.625540 expected loss 0.624080 OK   (took 4073 ms)
+  step 9: loss 0.378012 expected loss 0.376511 OK   (took 4059 ms)
+  overall okay: True
+  ```
 
 ## Example
 ```csharp
