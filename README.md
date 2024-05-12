@@ -28,9 +28,11 @@
   ```powershell
   dotnet run -c Release --project .\src\Llm\Llm.csproj
   ```
-  NOTE: This will download binary files e.g. weights and input tokens from
-  [nietras/llm.bin](https://huggingface.co/datasets/nietras/llm.bin) from
-  Hugging Face. That is there is no need to run any Python here to get data.
+  NOTE: First time this is run it will download binary files e.g. weights and
+  input tokens from
+  [nietras/llm.bin](https://huggingface.co/datasets/nietras/llm.bin) on Hugging
+  Face. This means there is no need to run any Python here to get data or
+  similar. Clone and run ✅
 * Output should then be something like:
   ```powershell
   [GPT-2]
