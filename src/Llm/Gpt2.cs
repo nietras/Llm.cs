@@ -11,6 +11,7 @@ namespace nietras.LargeLanguageModel;
 internal static partial class Gpt2
 {
     static readonly Action<string> Log = t => { Console.WriteLine(t); Trace.WriteLine(t); };
+    static readonly Action<string> LogNoNewLine = t => { Console.Write(t); Trace.Write(t); };
 
     // ----------------------------------------------------------------------------
     // GPT-2 model definition

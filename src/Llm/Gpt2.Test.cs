@@ -4,6 +4,8 @@ using System.IO;
 
 namespace nietras.LargeLanguageModel;
 
+#pragma warning disable IDE0007 // Use implicit type
+
 internal static partial class Gpt2
 {
     public static unsafe void Test(string dataDirectory)
@@ -83,34 +85,7 @@ internal static partial class Gpt2
                 // error checking at step 0 for reference activations/gradients
 
                 // at this point, target should be equal to expected_logits, let's compare
-                bool logits_ok = true;
-                for (int i = 0; i < B * T * V; i++)
-                {
-                    if (i < 3)
-                    {
-                        Log($"{expected_logits[i]} {model.acts.logits[i]}");
-                    }
-                    if (MathF.Abs(expected_logits[i] - model.acts.logits[i]) >= 1e-2)
-                    {
-                        Log($"MISMATCH AT INDEX {i}: {expected_logits[i]} {model.acts.logits[i]}");
-                        logits_ok = false;
-                        break;
-                    }
-                }
-                if (!logits_ok) { Log("NOT "); }
-                Log("OK (LOGITS)");
-                allOk = allOk && logits_ok;
-
-                // compare the achieved loss
-                if (MathF.Abs(model.mean_loss - *expected_loss) >= 1e-2)
-                {
-                    Log($"LOSS MISMATCH: {model.mean_loss} {*expected_loss}");
-                    allOk = false;
-                }
-                else
-                {
-                    Log($"LOSS OK: {model.mean_loss} {*expected_loss}");
-                }
+                allOk &= check_tensor(expected_logits, model.acts.logits, B * T * V, "Logits");
 
                 // finally check all the gradients
                 var gradoks = new bool[16];
@@ -144,7 +119,8 @@ internal static partial class Gpt2
             var lossOk = CheckLoss(model.mean_loss, expectedLoss);
             allOk = allOk && lossOk;
             // print the timing information at the end
-            Log($"step {step}: loss {model.mean_loss:F6} expected loss {expectedLoss:F6} ok {lossOk,5} (took {time_elapsed_s * 1000:F0} ms)");
+            Log($"step {step}: loss {model.mean_loss:F6} expected loss {expectedLoss:F6} " +
+                $"{(lossOk ? "OK" : "FAIL"),-4} (took {time_elapsed_s * 1000:F0} ms)");
         }
 
         Log($"overall okay: {allOk}");
@@ -158,37 +134,28 @@ internal static partial class Gpt2
         Free(&model);
     }
 
-    static bool CheckLoss(float a, float b) => MathF.Abs(a - b) < 0.01f;
+    static bool CheckLoss(float a, float b) => Check(a, b);
+    static bool Check(float a, float b) => MathF.Abs(a - b) < 0.01f;
 
     // poor man's tensor checker
-    static unsafe bool check_tensor(float* a, float* b, int n, string label)
+    static unsafe bool check_tensor(float* actual, float* expected, int n, string label)
     {
-        int print_upto = 5;
+        const int printUpTo = 0;//5;
+        LogNoNewLine($"{label,-16} ");
         bool ok = true;
-        Log($"{label}");
-
         for (int i = 0; i < n; i++)
         {
-            if (MathF.Abs(a[i] - b[i]) <= 1e-2)
+            var a = actual[i];
+            var e = expected[i];
+            var isOk = Check(a, e);
+            ok &= isOk;
+            if (i < printUpTo)
             {
-                if (i < print_upto) { Log("OK "); }
+                Log("");
+                LogNoNewLine($"{(isOk ? "OK  " : "FAIL")} {a,15} {e,15}");
             }
-            else
-            {
-                if (i < print_upto) { Log("NOT OK "); }
-                ok = false;
-            }
-            if (i < print_upto) { Log($"{a[i]} {b[i]}"); }
         }
-        // print the final result
-        if (ok)
-        {
-            Log("TENSOR OK");
-        }
-        else
-        {
-            Log("TENSOR NOT OK");
-        }
+        Log($"TENSOR {(ok ? "OK  " : "FAIL")}");
         return ok;
     }
 }
