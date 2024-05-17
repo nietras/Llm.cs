@@ -196,9 +196,13 @@ public static partial class Llm
         // this backward could be done in a single "round" of loops
         // but that doesn't afford an efficient parallelization strategy
 
+        var options = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Environment.ProcessorCount
+        };
         // backward into input first, parallelize over batchSize,tokenCount
         //#pragma omp parallel for collapse(2)
-        Parallel.ForEach(Extensions.Enumerate(batchSize, tokenCount), tuple =>
+        Parallel.ForEach(Extensions.Enumerate(batchSize, tokenCount), options, tuple =>
         //foreach (var tuple in Extensions.Enumerate(batchSize, tokenCount))
         {
             var (b, t) = tuple;
@@ -227,7 +231,7 @@ public static partial class Llm
 
         // backward into weight/bias, parallelize over output channels OC
         //#pragma omp parallel for
-        Parallel.For(0, outputChannelCount, o =>
+        Parallel.For(0, outputChannelCount, options, o =>
         {
             for (int b = 0; b < batchSize; b++)
             {
