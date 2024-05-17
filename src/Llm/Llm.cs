@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Numerics;
 using System.Threading.Tasks;
 
 namespace nietras.LargeLanguageModel;
@@ -198,6 +199,7 @@ public static partial class Llm
         // backward into input first, parallelize over batchSize,tokenCount
         //#pragma omp parallel for collapse(2)
         Parallel.ForEach(Extensions.Enumerate(batchSize, tokenCount), tuple =>
+        //foreach (var tuple in Extensions.Enumerate(batchSize, tokenCount))
         {
             var (b, t) = tuple;
             float* doutput_bt = doutput + b * tokenCount * outputChannelCount + t * outputChannelCount;
@@ -206,12 +208,23 @@ public static partial class Llm
             {
                 float* wrow = weight + o * inputChannelCount;
                 float d = doutput_bt[o];
-                for (int i = 0; i < inputChannelCount; i++)
+                var dVec = new Vector<float>(d);
+                int i = 0;
+                for (; i < (inputChannelCount - Vector<float>.Count); i += Vector<float>.Count)
+                {
+                    var dinput_bt_start = dinput_bt + i;
+                    var dinput_bt_Vec = Vector.Load(dinput_bt_start);
+                    dinput_bt_Vec += Vector.Load(wrow + i) * dVec;
+                    Vector.Store(dinput_bt_Vec, dinput_bt_start);
+                }
+                for (; i < inputChannelCount; i++)
                 {
                     dinput_bt[i] += wrow[i] * d;
                 }
             }
         });
+        //}
+
         // backward into weight/bias, parallelize over output channels OC
         //#pragma omp parallel for
         Parallel.For(0, outputChannelCount, o =>
@@ -225,7 +238,16 @@ public static partial class Llm
                     float* dwrow = dweight + o * inputChannelCount;
                     float d = doutput_bt[o];
                     if (dbias != null) { dbias[o] += d; }
-                    for (int i = 0; i < inputChannelCount; i++)
+                    var dVec = new Vector<float>(d);
+                    int i = 0;
+                    for (; i < (inputChannelCount - Vector<float>.Count); i += Vector<float>.Count)
+                    {
+                        var dwstart = dwrow + i;
+                        var dwVec = Vector.Load(dwstart);
+                        dwVec += Vector.Load(input_bt + i) * dVec;
+                        Vector.Store(dwVec, dwstart);
+                    }
+                    for (; i < inputChannelCount; i++)
                     {
                         dwrow[i] += input_bt[i] * d;
                     }
