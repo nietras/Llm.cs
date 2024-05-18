@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using System.Threading.Tasks;
+using P = System.Threading.Tasks.Parallel;
 
 namespace nietras.LargeLanguageModel;
 
@@ -170,7 +171,7 @@ public static partial class Llm
         // output will be (batchSize,tokenCount,OC)
         //(int b;
         //#pragma omp parallel for collapse(2)
-        Parallel.ForEach(Extensions.Enumerate(batchSize, tokenCount), tuple =>
+        P.ForEach(Extensions.Enumerate(batchSize, tokenCount), tuple =>
         {
             var (b, t) = tuple;
             float* output_bt = output + b * tokenCount * outputChannelCount + t * outputChannelCount;
@@ -202,7 +203,7 @@ public static partial class Llm
         };
         // backward into input first, parallelize over batchSize,tokenCount
         //#pragma omp parallel for collapse(2)
-        Parallel.ForEach(Extensions.Enumerate(batchSize, tokenCount), options, tuple =>
+        P.ForEach(Extensions.Enumerate(batchSize, tokenCount), options, tuple =>
         //foreach (var tuple in Extensions.Enumerate(batchSize, tokenCount))
         {
             var (b, t) = tuple;
@@ -231,7 +232,7 @@ public static partial class Llm
 
         // backward into weight/bias, parallelize over output channels OC
         //#pragma omp parallel for
-        Parallel.For(0, outputChannelCount, options, o =>
+        P.For(0, outputChannelCount, options, o =>
         {
             for (int b = 0; b < batchSize; b++)
             {
@@ -293,7 +294,7 @@ public static partial class Llm
         // Code below works on each individual batch sample, token, and head in parallel
 
         //#pragma omp parallel for collapse(3)
-        Parallel.ForEach(Extensions.Enumerate(batchSize, tokenCount, headCount), tuple =>
+        P.ForEach(Extensions.Enumerate(batchSize, tokenCount, headCount), tuple =>
         {
             var (b, t, h) = tuple;
 
@@ -483,7 +484,7 @@ public static partial class Llm
         // input: logits is (batchSize,tokenCount,vocabularySize) of the unnormalized log probabilities
         //#pragma omp parallel for collapse(2)
         //for (b = 0; b < batchSize; b++)
-        Parallel.ForEach(Extensions.Enumerate(batchSize, tokenCount), tuple =>
+        P.ForEach(Extensions.Enumerate(batchSize, tokenCount), tuple =>
         {
             var (b, t) = tuple;
             // probs <- softmax(logits)
