@@ -74,23 +74,18 @@ public class FixedThreadCountTaskScheduler : TaskScheduler
 {
     readonly int _threadCount;
     readonly ConcurrentQueue<Task> _taskQueue = new();
-    readonly List<Thread> _threads = new();
-    int _runningTasks = 0;
-    bool _stopRequested = false;
-    readonly AutoResetEvent _workAvailableEvent = new(false);
+    readonly List<Thread> _threads = [];
+    volatile bool _stopRequested = false;
+    readonly SemaphoreSlim _workAvailableSemaphore = new(0);
 
     public FixedThreadCountTaskScheduler(int threadCount)
     {
-        if (threadCount <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(threadCount), "Thread count must be greater than zero.");
-        }
-
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(threadCount);
         _threadCount = threadCount;
-
         for (var i = 0; i < _threadCount; i++)
         {
-            var thread = new Thread(ExecuteTasks);
+            Thread thread = new(ExecuteTasks);
+            thread.IsBackground = true;
             thread.Start();
             _threads.Add(thread);
         }
@@ -104,11 +99,7 @@ public class FixedThreadCountTaskScheduler : TaskScheduler
     protected override void QueueTask(Task task)
     {
         _taskQueue.Enqueue(task);
-        if (_runningTasks < _threadCount)
-        {
-            Interlocked.Increment(ref _runningTasks);
-            _workAvailableEvent.Set();
-        }
+        _workAvailableSemaphore.Release();
     }
 
     protected override bool TryExecuteTaskInline(Task task, bool taskWasPreviouslyQueued)
@@ -131,18 +122,10 @@ public class FixedThreadCountTaskScheduler : TaskScheduler
     {
         while (!_stopRequested)
         {
+            _workAvailableSemaphore.Wait();
             if (_taskQueue.TryDequeue(out var task))
             {
                 TryExecuteTask(task);
-            }
-            else
-            {
-                Interlocked.Decrement(ref _runningTasks);
-                if (_runningTasks == 0 && _taskQueue.IsEmpty)
-                {
-                    _workAvailableEvent.WaitOne();
-                    Interlocked.Increment(ref _runningTasks);
-                }
             }
         }
     }
@@ -150,7 +133,10 @@ public class FixedThreadCountTaskScheduler : TaskScheduler
     public void Stop()
     {
         _stopRequested = true;
-        _workAvailableEvent.Set();
+        for (var i = 0; i < _threadCount; i++)
+        {
+            _workAvailableSemaphore.Release();
+        }
         foreach (var thread in _threads)
         {
             thread.Join();
