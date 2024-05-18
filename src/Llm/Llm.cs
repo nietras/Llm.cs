@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Numerics;
-using System.Threading.Tasks;
 using P = System.Threading.Tasks.Parallel;
+//using P = nietras.LargeLanguageModel.NotParallel;
 
 namespace nietras.LargeLanguageModel;
 
@@ -197,13 +197,9 @@ public static partial class Llm
         // this backward could be done in a single "round" of loops
         // but that doesn't afford an efficient parallelization strategy
 
-        var options = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = Environment.ProcessorCount
-        };
         // backward into input first, parallelize over batchSize,tokenCount
         //#pragma omp parallel for collapse(2)
-        P.ForEach(Extensions.Enumerate(batchSize, tokenCount), options, tuple =>
+        P.ForEach(Extensions.Enumerate(batchSize, tokenCount), tuple =>
         //foreach (var tuple in Extensions.Enumerate(batchSize, tokenCount))
         {
             var (b, t) = tuple;
@@ -232,7 +228,7 @@ public static partial class Llm
 
         // backward into weight/bias, parallelize over output channels OC
         //#pragma omp parallel for
-        P.For(0, outputChannelCount, options, o =>
+        P.For(0, outputChannelCount, o =>
         {
             for (int b = 0; b < batchSize; b++)
             {

@@ -6,6 +6,19 @@ using System.Threading.Tasks;
 
 namespace nietras.LargeLanguageModel;
 
+static class NotParallel
+{
+    internal static void ForEach<T>(IEnumerable<T> source, Action<T> body)
+    {
+        foreach (var value in source) { body(value); }
+    }
+
+    internal static void For(int fromInclusive, int toExclusive, Action<int> body)
+    {
+        for (var i = fromInclusive; i < toExclusive; i++) { body(i); }
+    }
+}
+
 public class FixedThreadCountTaskScheduler : TaskScheduler
 {
     readonly int _threadCount;
