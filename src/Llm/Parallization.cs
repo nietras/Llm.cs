@@ -10,25 +10,25 @@ static class LlmParallel
 {
     internal static void ForRanges(int count0, int count1, Action<int, int> body)
     {
-        Parallel.ForEach(Extensions.Enumerate(count0, count1), t => body(t.i0, t.i1));
-        //Parallel.For(0, count0 * count1, v =>
-        //{
-        //    var i0 = v / count1;
-        //    var i1 = v % count1;
-        //    body(i0, i1);
-        //});
+        //Parallel.ForEach(Extensions.Enumerate(count0, count1), t => body(t.i0, t.i1));
+        Parallel.For(0, count0 * count1, v =>
+        {
+            var i0 = v / count1;
+            var i1 = v % count1;
+            body(i0, i1);
+        });
     }
 
     internal static void ForRanges(int count0, int count1, int count2, Action<int, int, int> body)
     {
-        Parallel.ForEach(Extensions.Enumerate(count0, count1, count2), t => body(t.i0, t.i1, t.i2));
-        //Parallel.For(0, count0 * count1 * count2, v =>
-        //{
-        //    var i0 = v / (count1 * count2);
-        //    var i1 = (v / count2) % count1;
-        //    var i2 = v % count2;
-        //    body(i0, i1, i2);
-        //});
+        //Parallel.ForEach(Extensions.Enumerate(count0, count1, count2), t => body(t.i0, t.i1, t.i2));
+        Parallel.For(0, count0 * count1 * count2, v =>
+        {
+            var i0 = v / (count1 * count2);
+            var i1 = (v / count2) % count1;
+            var i2 = v % count2;
+            body(i0, i1, i2);
+        });
     }
 
     internal static void For(int fromInclusive, int toExclusive, Action<int> body)
