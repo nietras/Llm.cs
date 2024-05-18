@@ -33,7 +33,7 @@ static class LlmParallel
 
     internal static void For(int fromInclusive, int toExclusive, Action<int> body)
     {
-        for (var i = fromInclusive; i < toExclusive; i++) { body(i); }
+        Parallel.For(fromInclusive, toExclusive, body);
     }
 }
 
