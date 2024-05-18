@@ -180,7 +180,14 @@ public static partial class Llm
             {
                 float val = (bias != null) ? bias[o] : 0.0f;
                 float* wrow = weight + o * inputChannelCount;
-                for (int i = 0; i < inputChannelCount; i++)
+                var sum = Vector<float>.Zero;
+                int i = 0;
+                for (; i < (inputChannelCount - Vector<float>.Count); i += Vector<float>.Count)
+                {
+                    sum += Vector.Load(input_bt + i) * Vector.Load(wrow + i);
+                }
+                val += Vector.Sum(sum);
+                for (; i < inputChannelCount; i++)
                 {
                     val += input_bt[i] * wrow[i];
                 }
