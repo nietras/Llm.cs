@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Numerics;
-using P = System.Threading.Tasks.Parallel;
+using P = nietras.LargeLanguageModel.LlmParallel;
 //using P = nietras.LargeLanguageModel.NotParallel;
 
 namespace nietras.LargeLanguageModel;
@@ -171,9 +171,8 @@ public static partial class Llm
         // output will be (batchSize,tokenCount,OC)
         //(int b;
         //#pragma omp parallel for collapse(2)
-        P.ForEach(Extensions.Enumerate(batchSize, tokenCount), tuple =>
+        P.ForRanges(batchSize, tokenCount, (b, t) =>
         {
-            var (b, t) = tuple;
             float* output_bt = output + b * tokenCount * outputChannelCount + t * outputChannelCount;
             float* input_bt = input + b * tokenCount * inputChannelCount + t * inputChannelCount;
             for (int o = 0; o < outputChannelCount; o++)
@@ -206,10 +205,8 @@ public static partial class Llm
 
         // backward into input first, parallelize over batchSize,tokenCount
         //#pragma omp parallel for collapse(2)
-        P.ForEach(Extensions.Enumerate(batchSize, tokenCount), tuple =>
-        //foreach (var tuple in Extensions.Enumerate(batchSize, tokenCount))
+        P.ForRanges(batchSize, tokenCount, (b, t) =>
         {
-            var (b, t) = tuple;
             float* doutput_bt = doutput + b * tokenCount * outputChannelCount + t * outputChannelCount;
             float* dinput_bt = dinput + b * tokenCount * inputChannelCount + t * inputChannelCount;
             for (int o = 0; o < outputChannelCount; o++)
@@ -297,10 +294,8 @@ public static partial class Llm
         // Code below works on each individual batch sample, token, and head in parallel
 
         //#pragma omp parallel for collapse(3)
-        P.ForEach(Extensions.Enumerate(batchSize, tokenCount, headCount), tuple =>
+        P.ForRanges(batchSize, tokenCount, headCount, (b, t, h) =>
         {
-            var (b, t, h) = tuple;
-
             float* query_t = input + b * tokenCount * C3 + t * C3 + h * headSize;
             float* preatt_bth = preatt + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
             float* att_bth = att + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
@@ -487,9 +482,8 @@ public static partial class Llm
         // input: logits is (batchSize,tokenCount,vocabularySize) of the unnormalized log probabilities
         //#pragma omp parallel for collapse(2)
         //for (b = 0; b < batchSize; b++)
-        P.ForEach(Extensions.Enumerate(batchSize, tokenCount), tuple =>
+        P.ForRanges(batchSize, tokenCount, (b, t) =>
         {
-            var (b, t) = tuple;
             // probs <- softmax(logits)
             float* logits_bt = logits + b * tokenCount * vocabularySize + t * vocabularySize;
             float* probs_bt = probs + b * tokenCount * vocabularySize + t * vocabularySize;
