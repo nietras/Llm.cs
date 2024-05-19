@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using P = nietras.LargeLanguageModel.LlmParallel;
 //using P = nietras.LargeLanguageModel.NotParallel;
 
@@ -173,6 +174,14 @@ public static partial class Llm
         //#pragma omp parallel for collapse(2)
         P.ForRanges(batchSize, tokenCount, (b, t) =>
         {
+            MatMulForwardAtBatchToken(output, input, weight, bias, tokenCount, inputChannelCount, outputChannelCount, b, t);
+        });
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        static unsafe void MatMulForwardAtBatchToken(
+            float* output, float* input, float* weight, float* bias,
+            int tokenCount, int inputChannelCount, int outputChannelCount,
+            int b, int t)
+        {
             float* output_bt = output + b * tokenCount * outputChannelCount + t * outputChannelCount;
             float* input_bt = input + b * tokenCount * inputChannelCount + t * inputChannelCount;
             for (int o = 0; o < outputChannelCount; o++)
@@ -192,7 +201,7 @@ public static partial class Llm
                 }
                 output_bt[o] = val;
             }
-        });
+        }
     }
 
     public unsafe static void MatMulBackward(float* dinput, float* dweight, float* dbias,
@@ -206,6 +215,15 @@ public static partial class Llm
         // backward into input first, parallelize over batchSize,tokenCount
         //#pragma omp parallel for collapse(2)
         P.ForRanges(batchSize, tokenCount, (b, t) =>
+        {
+            MatMulBackwardForInputAtBatchToken(dinput, doutput, weight, tokenCount, inputChannelCount, outputChannelCount, b, t);
+        });
+        //}
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        static unsafe void MatMulBackwardForInputAtBatchToken(
+            float* dinput, float* doutput, float* weight,
+            int tokenCount, int inputChannelCount, int outputChannelCount,
+            int b, int t)
         {
             float* doutput_bt = doutput + b * tokenCount * outputChannelCount + t * outputChannelCount;
             float* dinput_bt = dinput + b * tokenCount * inputChannelCount + t * inputChannelCount;
@@ -227,12 +245,19 @@ public static partial class Llm
                     dinput_bt[i] += wrow[i] * d;
                 }
             }
-        });
-        //}
+        }
 
         // backward into weight/bias, parallelize over output channels OC
         //#pragma omp parallel for
         P.For(0, outputChannelCount, o =>
+        {
+            MatMulBackwardParametersAtOutputChannel(dweight, dbias, doutput, input, batchSize, tokenCount, inputChannelCount, outputChannelCount, o);
+        });
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        static unsafe void MatMulBackwardParametersAtOutputChannel(
+            float* dweight, float* dbias, float* doutput, float* input,
+            int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount,
+            int o)
         {
             for (int b = 0; b < batchSize; b++)
             {
@@ -258,7 +283,7 @@ public static partial class Llm
                     }
                 }
             }
-        });
+        }
     }
 
     public unsafe static void AttentionForward(float* output, float* preatt, float* att,

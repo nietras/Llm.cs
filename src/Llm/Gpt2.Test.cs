@@ -75,10 +75,11 @@ internal static partial class Gpt2
             stopwatch.Restart();
 
             Forward(&model, x, y, B, T);
+            double t1_ms = stopwatch.Elapsed.TotalMilliseconds;
             ZeroGrad(&model);
+            double t2_ms = stopwatch.Elapsed.TotalMilliseconds;
             Backward(&model);
-
-            double time_elapsed_s = stopwatch.Elapsed.TotalSeconds;
+            double t3_ms = stopwatch.Elapsed.TotalMilliseconds;
 
             if (step == 0)
             {
@@ -112,15 +113,20 @@ internal static partial class Gpt2
                 }
             }
 
+            double t4_ms = stopwatch.Elapsed.TotalMilliseconds;
             Update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.01f, step + 1);
+            double t5_ms = stopwatch.Elapsed.TotalMilliseconds;
+
+            // llm.c did not include Update step when copied although significant part
+            double total_ms = t3_ms + t5_ms - t4_ms;
 
             losses[step] = model.mean_loss;
             var expectedLoss = expected_losses[step];
             var lossOk = CheckLoss(model.mean_loss, expectedLoss);
             allOk = allOk && lossOk;
             // print the timing information at the end
-            Log($"step {step}: loss {model.mean_loss:F6} expected loss {expectedLoss:F6} " +
-                $"{(lossOk ? "OK" : "FAIL"),-4} (took {time_elapsed_s * 1000:F0} ms)");
+            Log($"{step,2}: loss {model.mean_loss:F6} exp. {expectedLoss:F6} " +
+                $"{(lossOk ? "OK" : "FAIL"),-4} ({total_ms,5:F0} ms = Forward {t1_ms,5:F0} ms ZeroGrad {t2_ms - t1_ms,3:F0} ms Backward {t3_ms - t2_ms,4:F0} ms Update {t5_ms - t4_ms,4:F0} ms)");
         }
 
         Log($"overall okay: {allOk}");
