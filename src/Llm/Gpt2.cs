@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using static nietras.LargeLanguageModel.Llm;
 
@@ -523,7 +524,7 @@ internal static partial class Gpt2
         EncoderBackward(grads.wte, grads.wpe, grads_acts.encoded, model->inputs, B, T, C);
     }
 
-    static unsafe void Update(GPT2* model, float learning_rate, float beta1, float beta2, float eps, float weight_decay, int t)
+    static unsafe void Update(GPT2* model, float learningRate, float beta1, float beta2, float eps, float weightDecay, int t)
     {
         // reference: https://pytorch.org/docs/stable/generated/torch.optim.AdamW.html
 
@@ -534,7 +535,44 @@ internal static partial class Gpt2
             model->v_memory = calloc<float>(model->num_parameters);
         }
 
-        for (int i = 0; i < model->num_parameters; i++)
+        long i = 0;
+        var numParameters = model->num_parameters;
+
+        var beta1Vector = new Vector<float>(beta1);
+        var beta2Vector = new Vector<float>(beta2);
+        var oneMinusBeta1Vector = new Vector<float>(1.0f - beta1);
+        var oneMinusBeta2Vector = new Vector<float>(1.0f - beta2);
+        var epsVector = new Vector<float>(eps);
+        var learningRateVector = new Vector<float>(learningRate);
+        var weightDecayVector = new Vector<float>(weightDecay);
+        //for (; i < (numParameters - Vector<float>.Count); i += Vector<float>.Count)
+        if (false)
+        {
+            var paramVector = Vector.Load(model->params_memory + i);
+            var gradVector = Vector.Load(model->grads_memory + i);
+            var mVector = Vector.Load(model->m_memory + i);
+            var vVector = Vector.Load(model->v_memory + i);
+
+            // update the first moment (momentum)
+            Vector<float> m = beta1Vector * mVector + oneMinusBeta1Vector * gradVector;
+            // update the second moment (RMSprop)
+            Vector<float> v = beta2Vector * vVector + oneMinusBeta2Vector * gradVector * gradVector;
+            // bias-correct both moments
+            Vector<float> mHat = m / (Vector<float>.One - Pow(beta1Vector, t));
+            Vector<float> vHat = v / (Vector<float>.One - Pow(beta2Vector, t));
+
+            // update
+            paramVector -= learningRateVector *
+                (mHat / (Vector.SquareRoot(vHat) + epsVector) +
+                 weightDecayVector * paramVector);
+
+            Vector.Store(mVector, model->m_memory + i);
+            Vector.Store(vVector, model->v_memory + i);
+            Vector.Store(paramVector, model->params_memory + i);
+        }
+        var invOneMinusDecayBeta1 = 1.0f / (1.0f - MathF.Pow(beta1, t));
+        var invOneMinusDecayBeta2 = 1.0f / (1.0f - MathF.Pow(beta2, t));
+        for (; i < model->num_parameters; i++)
         {
             float param = model->params_memory[i];
             float grad = model->grads_memory[i];
@@ -544,14 +582,23 @@ internal static partial class Gpt2
             // update the second moment (RMSprop)
             float v = beta2 * model->v_memory[i] + (1.0f - beta2) * grad * grad;
             // bias-correct both moments
-            float m_hat = m / (1.0f - MathF.Pow(beta1, t));
-            float v_hat = v / (1.0f - MathF.Pow(beta2, t));
+            float m_hat = m * invOneMinusDecayBeta1; // / (1.0f - MathF.Pow(beta1, t));
+            float v_hat = v * invOneMinusDecayBeta2; // / (1.0f - MathF.Pow(beta2, t));
 
             // update
             model->m_memory[i] = m;
             model->v_memory[i] = v;
-            model->params_memory[i] -= learning_rate * (m_hat / (MathF.Sqrt(v_hat) + eps) + weight_decay * param);
+            model->params_memory[i] -= learningRate * (m_hat / (MathF.Sqrt(v_hat) + eps) + weightDecay * param);
         }
+    }
+
+    static Vector<float> Pow(Vector<float> v, int t)
+    {
+        for (int i = 1; i < t; i++)
+        {
+            v *= v;
+        }
+        return v;
     }
 
     static unsafe void Free(GPT2* model)
