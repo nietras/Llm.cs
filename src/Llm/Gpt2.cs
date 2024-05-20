@@ -534,9 +534,13 @@ internal static partial class Gpt2
             model->m_memory = calloc<float>(model->num_parameters);
             model->v_memory = calloc<float>(model->num_parameters);
         }
+        var parameters = model->params_memory;
+        var gradients = model->grads_memory;
+        var ms = model->m_memory;
+        var vs = model->v_memory;
 
         long i = 0;
-        var numParameters = model->num_parameters;
+        var parameterCount = model->num_parameters;
 
         var invOneMinusDecayBeta1 = 1.0f / (1.0f - MathF.Pow(beta1, t));
         var invOneMinusDecayBeta2 = 1.0f / (1.0f - MathF.Pow(beta2, t));
@@ -550,11 +554,11 @@ internal static partial class Gpt2
         var weightDecayVector = new Vector<float>(weightDecay);
         var invOneMinusDecayBeta1Vector = new Vector<float>(invOneMinusDecayBeta1);
         var invOneMinusDecayBeta2Vector = new Vector<float>(invOneMinusDecayBeta2);
-        //for (; i < (numParameters - Vector<float>.Count); i += Vector<float>.Count)
+        //for (; i < (parameterCount - Vector<float>.Count); i += Vector<float>.Count)
         if (false)
         {
-            var paramVector = Vector.Load(model->params_memory + i);
-            var gradVector = Vector.Load(model->grads_memory + i);
+            var paramVector = Vector.Load(parameters + i);
+            var gradVector = Vector.Load(gradients + i);
             var mVector = Vector.Load(model->m_memory + i);
             var vVector = Vector.Load(model->v_memory + i);
 
@@ -573,25 +577,27 @@ internal static partial class Gpt2
 
             Vector.Store(mVector, model->m_memory + i);
             Vector.Store(vVector, model->v_memory + i);
-            Vector.Store(paramVector, model->params_memory + i);
+            Vector.Store(paramVector, parameters + i);
         }
-        for (; i < model->num_parameters; i++)
+        for (; i < parameterCount; i++)
         {
-            float param = model->params_memory[i];
-            float grad = model->grads_memory[i];
+            float param = parameters[i];
+            float grad = gradients[i];
 
             // update the first moment (momentum)
-            float m = beta1 * model->m_memory[i] + (1.0f - beta1) * grad;
+            float m = beta1 * ms[i] + (1.0f - beta1) * grad;
             // update the second moment (RMSprop)
-            float v = beta2 * model->v_memory[i] + (1.0f - beta2) * grad * grad;
+            float v = beta2 * vs[i] + (1.0f - beta2) * grad * grad;
             // bias-correct both moments
-            float m_hat = m * invOneMinusDecayBeta1; // / (1.0f - MathF.Pow(beta1, t));
-            float v_hat = v * invOneMinusDecayBeta2; // / (1.0f - MathF.Pow(beta2, t));
+            float m_hat = m * invOneMinusDecayBeta1;
+            float v_hat = v * invOneMinusDecayBeta2;
 
             // update
-            model->m_memory[i] = m;
-            model->v_memory[i] = v;
-            model->params_memory[i] -= learningRate * (m_hat / (MathF.Sqrt(v_hat) + eps) + weightDecay * param);
+            ms[i] = m;
+            vs[i] = v;
+            parameters[i] -= learningRate *
+                (m_hat / (MathF.Sqrt(v_hat) + eps) +
+                 weightDecay * param);
         }
     }
 
