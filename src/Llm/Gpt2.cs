@@ -538,6 +538,9 @@ internal static partial class Gpt2
         long i = 0;
         var numParameters = model->num_parameters;
 
+        var invOneMinusDecayBeta1 = 1.0f / (1.0f - MathF.Pow(beta1, t));
+        var invOneMinusDecayBeta2 = 1.0f / (1.0f - MathF.Pow(beta2, t));
+
         var beta1Vector = new Vector<float>(beta1);
         var beta2Vector = new Vector<float>(beta2);
         var oneMinusBeta1Vector = new Vector<float>(1.0f - beta1);
@@ -545,6 +548,8 @@ internal static partial class Gpt2
         var epsVector = new Vector<float>(eps);
         var learningRateVector = new Vector<float>(learningRate);
         var weightDecayVector = new Vector<float>(weightDecay);
+        var invOneMinusDecayBeta1Vector = new Vector<float>(invOneMinusDecayBeta1);
+        var invOneMinusDecayBeta2Vector = new Vector<float>(invOneMinusDecayBeta2);
         //for (; i < (numParameters - Vector<float>.Count); i += Vector<float>.Count)
         if (false)
         {
@@ -558,8 +563,8 @@ internal static partial class Gpt2
             // update the second moment (RMSprop)
             Vector<float> v = beta2Vector * vVector + oneMinusBeta2Vector * gradVector * gradVector;
             // bias-correct both moments
-            Vector<float> mHat = m / (Vector<float>.One - Pow(beta1Vector, t));
-            Vector<float> vHat = v / (Vector<float>.One - Pow(beta2Vector, t));
+            Vector<float> mHat = m * invOneMinusDecayBeta1Vector;
+            Vector<float> vHat = v * invOneMinusDecayBeta2Vector;
 
             // update
             paramVector -= learningRateVector *
@@ -570,8 +575,6 @@ internal static partial class Gpt2
             Vector.Store(vVector, model->v_memory + i);
             Vector.Store(paramVector, model->params_memory + i);
         }
-        var invOneMinusDecayBeta1 = 1.0f / (1.0f - MathF.Pow(beta1, t));
-        var invOneMinusDecayBeta2 = 1.0f / (1.0f - MathF.Pow(beta2, t));
         for (; i < model->num_parameters; i++)
         {
             float param = model->params_memory[i];
@@ -590,15 +593,6 @@ internal static partial class Gpt2
             model->v_memory[i] = v;
             model->params_memory[i] -= learningRate * (m_hat / (MathF.Sqrt(v_hat) + eps) + weightDecay * param);
         }
-    }
-
-    static Vector<float> Pow(Vector<float> v, int t)
-    {
-        for (int i = 1; i < t; i++)
-        {
-            v *= v;
-        }
-        return v;
     }
 
     static unsafe void Free(GPT2* model)
