@@ -554,49 +554,48 @@ internal static partial class Gpt2
         var weightDecayVector = new Vector<float>(weightDecay);
         var invOneMinusDecayBeta1Vector = new Vector<float>(invOneMinusDecayBeta1);
         var invOneMinusDecayBeta2Vector = new Vector<float>(invOneMinusDecayBeta2);
-        //for (; i < (parameterCount - Vector<float>.Count); i += Vector<float>.Count)
-        if (false)
+        for (; i < (parameterCount - Vector<float>.Count); i += Vector<float>.Count)
         {
             var paramVector = Vector.Load(parameters + i);
             var gradVector = Vector.Load(gradients + i);
-            var mVector = Vector.Load(model->m_memory + i);
-            var vVector = Vector.Load(model->v_memory + i);
+            var mVector = Vector.Load(ms + i);
+            var vVector = Vector.Load(vs + i);
 
             // update the first moment (momentum)
-            Vector<float> m = beta1Vector * mVector + oneMinusBeta1Vector * gradVector;
+            var m = beta1Vector * mVector + oneMinusBeta1Vector * gradVector;
             // update the second moment (RMSprop)
-            Vector<float> v = beta2Vector * vVector + oneMinusBeta2Vector * gradVector * gradVector;
+            var v = beta2Vector * vVector + oneMinusBeta2Vector * gradVector * gradVector;
             // bias-correct both moments
-            Vector<float> mHat = m * invOneMinusDecayBeta1Vector;
-            Vector<float> vHat = v * invOneMinusDecayBeta2Vector;
+            var mHat = m * invOneMinusDecayBeta1Vector;
+            var vHat = v * invOneMinusDecayBeta2Vector;
 
             // update
             paramVector -= learningRateVector *
                 (mHat / (Vector.SquareRoot(vHat) + epsVector) +
                  weightDecayVector * paramVector);
 
-            Vector.Store(mVector, model->m_memory + i);
-            Vector.Store(vVector, model->v_memory + i);
+            Vector.Store(m, ms + i);
+            Vector.Store(v, vs + i);
             Vector.Store(paramVector, parameters + i);
         }
         for (; i < parameterCount; i++)
         {
-            float param = parameters[i];
-            float grad = gradients[i];
+            var param = parameters[i];
+            var grad = gradients[i];
 
             // update the first moment (momentum)
-            float m = beta1 * ms[i] + (1.0f - beta1) * grad;
+            var m = beta1 * ms[i] + (1.0f - beta1) * grad;
             // update the second moment (RMSprop)
-            float v = beta2 * vs[i] + (1.0f - beta2) * grad * grad;
+            var v = beta2 * vs[i] + (1.0f - beta2) * grad * grad;
             // bias-correct both moments
-            float m_hat = m * invOneMinusDecayBeta1;
-            float v_hat = v * invOneMinusDecayBeta2;
+            var mHat = m * invOneMinusDecayBeta1;
+            var vHat = v * invOneMinusDecayBeta2;
 
             // update
             ms[i] = m;
             vs[i] = v;
             parameters[i] -= learningRate *
-                (m_hat / (MathF.Sqrt(v_hat) + eps) +
+                (mHat / (MathF.Sqrt(vHat) + eps) +
                  weightDecay * param);
         }
     }
