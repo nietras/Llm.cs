@@ -538,9 +538,9 @@ internal static partial class Gpt2
         var gradients = model->grads_memory;
         var ms = model->m_memory;
         var vs = model->v_memory;
+        var parameterCount = model->num_parameters;
 
         long i = 0;
-        var parameterCount = model->num_parameters;
 
         var invOneMinusDecayBeta1 = 1.0f / (1.0f - MathF.Pow(beta1, t));
         var invOneMinusDecayBeta2 = 1.0f / (1.0f - MathF.Pow(beta2, t));

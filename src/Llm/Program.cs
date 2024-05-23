@@ -14,11 +14,11 @@ var dataDirectory = Path.Combine(location!, "../../../");
 
 DownloadBinaryFilesIfNotExists(Gpt2.FileNames, Gpt2.RemoteUrl, dataDirectory, log);
 
-ThreadPool.SetMinThreads(Environment.ProcessorCount, Environment.ProcessorCount);
-ThreadPool.SetMaxThreads(Environment.ProcessorCount, Environment.ProcessorCount);
+//ThreadPool.SetMinThreads(Environment.ProcessorCount, Environment.ProcessorCount);
+//ThreadPool.SetMaxThreads(Environment.ProcessorCount, Environment.ProcessorCount);
 log($"{nameof(ThreadPool.ThreadCount)} {ThreadPool.ThreadCount}");
-ThreadPool.GetAvailableThreads(out var workerThreads, out var completionPortThreads);
-log($"{workerThreads} {completionPortThreads}");
+ThreadPool.GetMinThreads(out var workerThreads, out var completionPortThreads);
+log($"MinThreads {workerThreads} {completionPortThreads}");
 
 Gpt2.Test(dataDirectory);
 //Gpt2.Train(dataDirectory);

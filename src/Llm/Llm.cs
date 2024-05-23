@@ -122,42 +122,51 @@ public static partial class Llm
         {
             for (int t = 0; t < tokenCount; t++)
             {
-                float* doutput_bt = doutput + b * tokenCount * channelCount + t * channelCount;
-                float* input_bt = input + b * tokenCount * channelCount + t * channelCount;
-                float* dinput_bt = dinput + b * tokenCount * channelCount + t * channelCount;
-                float mean_bt = mean[b * tokenCount + t];
-                float rstd_bt = rstd[b * tokenCount + t];
+                LayerNormBackwardAtBatchToken(dinput, dweight, dbias, doutput, input, weight, mean, rstd, tokenCount, channelCount, b, t);
+            }
+        }
 
-                // first: two reduce operations
-                float dnorm_mean = 0.0f;
-                float dnorm_norm_mean = 0.0f;
-                for (int i = 0; i < channelCount; i++)
-                {
-                    float norm_bti = (input_bt[i] - mean_bt) * rstd_bt;
-                    float dnorm_i = weight[i] * doutput_bt[i];
-                    dnorm_mean += dnorm_i;
-                    dnorm_norm_mean += dnorm_i * norm_bti;
-                }
-                dnorm_mean = dnorm_mean / channelCount;
-                dnorm_norm_mean = dnorm_norm_mean / channelCount;
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        static unsafe void LayerNormBackwardAtBatchToken(
+            float* dinput, float* dweight, float* dbias, float* doutput,
+            float* input, float* weight, float* mean, float* rstd,
+            int tokenCount, int channelCount, int b, int t)
+        {
+            float* doutput_bt = doutput + b * tokenCount * channelCount + t * channelCount;
+            float* input_bt = input + b * tokenCount * channelCount + t * channelCount;
+            float* dinput_bt = dinput + b * tokenCount * channelCount + t * channelCount;
+            float mean_bt = mean[b * tokenCount + t];
+            float rstd_bt = rstd[b * tokenCount + t];
 
-                // now iterate again and accumulate all the gradients
-                for (int i = 0; i < channelCount; i++)
-                {
-                    float norm_bti = (input_bt[i] - mean_bt) * rstd_bt;
-                    float dnorm_i = weight[i] * doutput_bt[i];
-                    // gradient contribution to bias
-                    dbias[i] += doutput_bt[i];
-                    // gradient contribution to weight
-                    dweight[i] += norm_bti * doutput_bt[i];
-                    // gradient contribution to input
-                    float dval = 0.0f;
-                    dval += dnorm_i; // term 1
-                    dval -= dnorm_mean; // term 2
-                    dval -= norm_bti * dnorm_norm_mean; // term 3
-                    dval *= rstd_bt; // final scale
-                    dinput_bt[i] += dval;
-                }
+            // first: two reduce operations
+            float dnorm_mean = 0.0f;
+            float dnorm_norm_mean = 0.0f;
+            for (int i = 0; i < channelCount; i++)
+            {
+                float norm_bti = (input_bt[i] - mean_bt) * rstd_bt;
+                float dnorm_i = weight[i] * doutput_bt[i];
+                dnorm_mean += dnorm_i;
+                dnorm_norm_mean += dnorm_i * norm_bti;
+            }
+            dnorm_mean = dnorm_mean / channelCount;
+            dnorm_norm_mean = dnorm_norm_mean / channelCount;
+
+            // now iterate again and accumulate all the gradients
+            for (int i = 0; i < channelCount; i++)
+            {
+                float norm_bti = (input_bt[i] - mean_bt) * rstd_bt;
+                float dnorm_i = weight[i] * doutput_bt[i];
+                // gradient contribution to bias
+                dbias[i] += doutput_bt[i];
+                // gradient contribution to weight
+                dweight[i] += norm_bti * doutput_bt[i];
+                // gradient contribution to input
+                float dval = 0.0f;
+                dval += dnorm_i; // term 1
+                dval -= dnorm_mean; // term 2
+                dval -= norm_bti * dnorm_norm_mean; // term 3
+                dval *= rstd_bt; // final scale
+                dinput_bt[i] += dval;
             }
         }
     }
@@ -321,6 +330,13 @@ public static partial class Llm
         //#pragma omp parallel for collapse(3)
         P.ForRanges(batchSize, tokenCount, headCount, (b, t, h) =>
         {
+            AttentionForwardAtBatchTokenHead(output, preatt, att, input, tokenCount, channelCount, headCount, b, t, h, C3, headSize, scale);
+        });
+
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        static unsafe void AttentionForwardAtBatchTokenHead(float* output, float* preatt, float* att, float* input,
+            int tokenCount, int channelCount, int headCount, int b, int t, int h, int C3, int headSize, float scale)
+        {
             float* query_t = input + b * tokenCount * C3 + t * C3 + h * headSize;
             float* preatt_bth = preatt + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
             float* att_bth = att + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
@@ -384,7 +400,7 @@ public static partial class Llm
                     output_bth[i] += att_btht2 * value_t2[i];
                 }
             }
-        });
+        }
     }
 
     public unsafe static void AttentionBackward(float* dinput, float* dpreatt, float* datt,
@@ -398,60 +414,108 @@ public static partial class Llm
         int headSize = channelCount / headCount; // head size
         float scale = 1.0f / MathF.Sqrt(headSize);
 
-        for (int b = 0; b < batchSize; b++)
+        //for (int b = 0; b < batchSize; b++)
+        //{
+        //    for (int t = 0; t < tokenCount; t++)
+        //    {
+        //        for (int h = 0; h < headCount; h++)
+        //        {
+        //            AttentionBackwardAtBatchTokenHead(dinput, dpreatt, datt, doutput, input, att, tokenCount, channelCount, headCount, C3, headSize, scale, b, t, h);
+        //        }
+        //    }
+        //}
+        // Cannot simply parallize like this since some derivatives are "shared"
+        // like dinput (derivative of input which is output from this method )
+        //P.ForRanges(batchSize, tokenCount, headCount, (b, t, h) =>
+        //{
+        //    AttentionBackwardAtBatchTokenHead(dinput, dpreatt, datt, doutput, input, att, tokenCount, channelCount, headCount, C3, headSize, scale, b, t, h);
+        //});
+        P.ForRanges(batchSize, headCount, (b, h) =>
         {
             for (int t = 0; t < tokenCount; t++)
             {
-                for (int h = 0; h < headCount; h++)
+                AttentionBackwardAtBatchTokenHead(dinput, dpreatt, datt, doutput, input, att, tokenCount, channelCount, headCount, C3, headSize, scale, b, t, h);
+            }
+        });
+
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        static unsafe void AttentionBackwardAtBatchTokenHead(float* dinput, float* dpreatt, float* datt, float* doutput, float* input, float* att,
+            int tokenCount, int channelCount, int headCount, int C3, int headSize, float scale, int b, int t, int h)
+        {
+            float* att_bth = att + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
+            float* datt_bth = datt + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
+            float* dpreatt_bth = dpreatt + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
+            float* dquery_t = dinput + b * tokenCount * C3 + t * C3 + h * headSize;
+            float* query_t = input + b * tokenCount * C3 + t * C3 + h * headSize;
+
+            // backward pass 4, through the value accumulation
+            float* doutput_bth = doutput + b * tokenCount * channelCount + t * channelCount + h * headSize;
+            for (int t2 = 0; t2 <= t; t2++)
+            {
+                float* value_t2 = input + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount * 2; // +channelCount*2 because it's value
+                float* dvalue_t2 = dinput + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount * 2;
+                int i = 0;
+                var att_bth_t2 = att_bth[t2];
+                var datt_bth_sum = 0f;
+                if (Vector<float>.IsSupported)
                 {
-                    float* att_bth = att + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
-                    float* datt_bth = datt + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
-                    float* dpreatt_bth = dpreatt + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
-                    float* dquery_t = dinput + b * tokenCount * C3 + t * C3 + h * headSize;
-                    float* query_t = input + b * tokenCount * C3 + t * C3 + h * headSize;
-
-                    // backward pass 4, through the value accumulation
-                    float* doutput_bth = doutput + b * tokenCount * channelCount + t * channelCount + h * headSize;
-                    for (int t2 = 0; t2 <= t; t2++)
+                    var att_bth_broadcastVector = new Vector<float>(att_bth_t2);
+                    var datt_bth_sum_vector = Vector<float>.Zero;
+                    for (; i < headSize - Vector<float>.Count; i += Vector<float>.Count)
                     {
-                        float* value_t2 = input + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount * 2; // +channelCount*2 because it's value
-                        float* dvalue_t2 = dinput + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount * 2;
-                        for (int i = 0; i < headSize; i++)
-                        {
-                            // in the forward pass this was:
-                            // output_bth[i] += att_bth[t2] * value_t2[i];
-                            // so now we have:
-                            datt_bth[t2] += value_t2[i] * doutput_bth[i];
-                            dvalue_t2[i] += att_bth[t2] * doutput_bth[i];
-                        }
+                        // in the forward pass this was:
+                        // output_bth[i] += att_bth[t2] * value_t2[i];
+                        // so now we have:
+                        var valueVector = Vector.Load(value_t2 + i);
+                        var doutputVector = Vector.Load(doutput_bth + i);
+                        datt_bth_sum_vector += valueVector * doutputVector;
+                        var dValuePtr = dvalue_t2 + i;
+                        var dValueVector = Vector.Load(dValuePtr);
+                        dValueVector += att_bth_broadcastVector * doutputVector;
+                        Vector.Store(dValueVector, dValuePtr);
                     }
+                    datt_bth_sum = Vector.Sum(datt_bth_sum_vector);
+                }
+                for (; i < headSize; i++)
+                {
+                    // in the forward pass this was:
+                    // output_bth[i] += att_bth[t2] * value_t2[i];
+                    // so now we have:
+                    //datt_bth[t2] += value_t2[i] * doutput_bth[i];
+                    //dvalue_t2[i] += att_bth[t2] * doutput_bth[i];
+                    datt_bth_sum += value_t2[i] * doutput_bth[i];
+                    dvalue_t2[i] += att_bth_t2 * doutput_bth[i];
+                }
+                datt_bth[t2] += datt_bth_sum;
+            }
 
-                    // backward pass 2 & 3, the softmax
-                    // note that softmax (like e.g. tanh) doesn't need the input (preatt) to backward
-                    for (int t2 = 0; t2 <= t; t2++)
-                    {
-                        for (int t3 = 0; t3 <= t; t3++)
-                        {
-                            float indicator = t2 == t3 ? 1.0f : 0.0f;
-                            float local_derivative = att_bth[t2] * (indicator - att_bth[t3]);
-                            dpreatt_bth[t3] += local_derivative * datt_bth[t2];
-                        }
-                    }
+            // backward pass 2 & 3, the softmax
+            // note that softmax (like e.g. tanh) doesn't need the input (preatt) to backward
+            for (int t2 = 0; t2 <= t; t2++)
+            {
+                var att_bth_t2 = att_bth[t2];
+                var datt_bth_t2 = datt_bth[t2];
+                for (int t3 = 0; t3 <= t; t3++)
+                {
+                    float indicator = t2 == t3 ? 1.0f : 0.0f;
+                    float local_derivative = att_bth_t2 * (indicator - att_bth[t3]);
+                    dpreatt_bth[t3] += local_derivative * datt_bth_t2;
+                }
+            }
 
-                    // backward pass 1, the query @ key matmul
-                    for (int t2 = 0; t2 <= t; t2++)
-                    {
-                        float* key_t2 = input + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount; // +channelCount because it's key
-                        float* dkey_t2 = dinput + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount; // +channelCount because it's key
-                        for (int i = 0; i < headSize; i++)
-                        {
-                            // in the forward pass this was:
-                            // preatt_bth[t2] += (query_t[i] * key_t2[i]) * scale;
-                            // so now we have:
-                            dquery_t[i] += key_t2[i] * dpreatt_bth[t2] * scale;
-                            dkey_t2[i] += query_t[i] * dpreatt_bth[t2] * scale;
-                        }
-                    }
+            // backward pass 1, the query @ key matmul
+            for (int t2 = 0; t2 <= t; t2++)
+            {
+                float* key_t2 = input + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount; // +channelCount because it's key
+                float* dkey_t2 = dinput + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount; // +channelCount because it's key
+                var dpreatt_bth_t2_scaled = dpreatt_bth[t2] * scale;
+                for (int i = 0; i < headSize; i++)
+                {
+                    // in the forward pass this was:
+                    // preatt_bth[t2] += (query_t[i] * key_t2[i]) * scale;
+                    // so now we have:
+                    dquery_t[i] += key_t2[i] * dpreatt_bth_t2_scaled;
+                    dkey_t2[i] += query_t[i] * dpreatt_bth_t2_scaled;
                 }
             }
         }
@@ -469,18 +533,33 @@ public static partial class Llm
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public unsafe static void GeLUBackward(float* dinput, float* input, float* doutput, int count)
     {
-        for (int i = 0; i < count; i++)
+        // TODO: Chunk!
+        P.For(0, count, i =>
         {
             float x = input[i];
+            var local_grad = GeLUGrad(x);
+            dinput[i] += local_grad * doutput[i];
+        });
+        //for (int i = 0; i < count; i++)
+        //{
+        //    float x = input[i];
+        //    var local_grad = GeLUGrad(x);
+        //    dinput[i] += local_grad * doutput[i];
+        //}
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static unsafe float GeLUGrad(float x)
+        {
             float cube = 0.044715f * x * x * x;
             float tanh_arg = GELU_SCALING_FACTOR * (x + cube);
             float tanh_out = MathF.Tanh(tanh_arg);
             float coshf_out = MathF.Cosh(tanh_arg);
             float sech_out = 1.0f / (coshf_out * coshf_out);
             float local_grad = 0.5f * (1.0f + tanh_out) + x * 0.5f * sech_out * GELU_SCALING_FACTOR * (1.0f + 3.0f * 0.044715f * x * x);
-            dinput[i] += local_grad * doutput[i];
+            return local_grad;
         }
     }
 
@@ -514,7 +593,7 @@ public static partial class Llm
             float* probs_bt = probs + b * tokenCount * vocabularySize + t * vocabularySize;
 
             // maxval is only calculated and subtracted for numerical stability
-            float maxval = -10000.0f; // TODO something better
+            float maxval = float.MinValue;
             for (int i = 0; i < vocabularySize; i++)
             {
                 if (logits_bt[i] > maxval)
