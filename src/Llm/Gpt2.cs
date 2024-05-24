@@ -374,19 +374,19 @@ internal static partial class Gpt2
             float* l_residual3 = acts.residual3 + l * B * T * C;
 
             // now do the forward pass
-            LayerNormForward(l_ln1, l_ln1_mean, l_ln1_rstd, residual, l_ln1w, l_ln1b, B, T, C);
+            LayerNormForward(residual, l_ln1w, l_ln1b, B, T, C, l_ln1_mean, l_ln1_rstd, l_ln1);
             MatMulForward(l_qkv, l_ln1, l_qkvw, l_qkvb, B, T, C, 3 * C);
             AttentionForward(l_atty, l_preatt, l_att, l_qkv, B, T, C, NH);
             MatMulForward(l_attproj, l_atty, l_attprojw, l_attprojb, B, T, C, C);
             ResidualForward(l_residual2, residual, l_attproj, B * T * C);
-            LayerNormForward(l_ln2, l_ln2_mean, l_ln2_rstd, l_residual2, l_ln2w, l_ln2b, B, T, C);
+            LayerNormForward(l_residual2, l_ln2w, l_ln2b, B, T, C, l_ln2_mean, l_ln2_rstd, l_ln2);
             MatMulForward(l_fch, l_ln2, l_fcw, l_fcb, B, T, C, 4 * C);
             GeLUForward(l_fch_gelu, l_fch, B * T * 4 * C);
             MatMulForward(l_fcproj, l_fch_gelu, l_fcprojw, l_fcprojb, B, T, 4 * C, C);
             ResidualForward(l_residual3, l_residual2, l_fcproj, B * T * C);
         }
         residual = acts.residual3 + (L - 1) * B * T * C; // last residual is in residual3
-        LayerNormForward(acts.lnf, acts.lnf_mean, acts.lnf_rstd, residual, parameters.lnfw, parameters.lnfb, B, T, C);
+        LayerNormForward(residual, parameters.lnfw, parameters.lnfb, B, T, C, acts.lnf_mean, acts.lnf_rstd, acts.lnf);
         MatMulForward(acts.logits, acts.lnf, parameters.wte, null, B, T, C, V);
         SoftmaxForward(acts.probs, acts.logits, B, T, V);
 

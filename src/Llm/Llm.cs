@@ -94,9 +94,10 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void LayerNormForward(float* output, float* mean, float* rstd,
-                           float* input, float* weight, float* bias,
-                           int batchSize, int tokenCount, int channelCount)
+    public unsafe static void LayerNormForward(
+        float* input, float* weight, float* bias,
+        int batchSize, int tokenCount, int channelCount,
+        float* mean, float* invStdDev, float* output)
     {
         // reference: https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html
         // both input and output are (batchSize,tokenCount,channelCount) of the activations
@@ -137,7 +138,7 @@ public static partial class Llm
                 }
                 // cache the mean and rstd for the backward pass later
                 mean[b * tokenCount + t] = m;
-                rstd[b * tokenCount + t] = s;
+                invStdDev[b * tokenCount + t] = s;
             }
         }
     }
