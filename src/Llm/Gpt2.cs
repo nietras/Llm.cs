@@ -335,7 +335,7 @@ internal static partial class Gpt2
         ParameterTensors parameters = model->parameters; // for brevity
         ActivationTensors acts = model->acts;
         float* residual;
-        EncoderForward(acts.encoded, inputs, parameters.wte, parameters.wpe, B, T, C); // encoding goes into residual[0]
+        EmbedForward(inputs, parameters.wte, parameters.wpe, B, T, C, acts.encoded); // encoding goes into residual[0]
         for (int l = 0; l < L; l++)
         {
 
@@ -521,7 +521,7 @@ internal static partial class Gpt2
             MatMulBackward(dl_ln1, dl_qkvw, dl_qkvb, dl_qkv, l_ln1, l_qkvw, B, T, C, 3 * C);
             LayerNormBackward(dresidual, dl_ln1w, dl_ln1b, dl_ln1, residual, l_ln1w, l_ln1_mean, l_ln1_rstd, B, T, C);
         }
-        EncoderBackward(grads.wte, grads.wpe, grads_acts.encoded, model->inputs, B, T, C);
+        EmbedBackward(grads_acts.encoded, model->inputs, B, T, C, grads.wte, grads.wpe);
     }
 
     static unsafe void Update(GPT2* model, float learningRate, float beta1, float beta2, float eps, float weightDecay, int t)

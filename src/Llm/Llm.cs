@@ -13,54 +13,82 @@ namespace nietras.LargeLanguageModel;
 // batchSize = B, tokenCount = T, channelCount = C, vocabularySize = V
 public static partial class Llm
 {
-    // Calling this "Encoder" is confusing as the other part of transformer
-    // architecture is an encoder. This should be renamed to "Embed".
-    public unsafe static void EncoderForward(float* output,
-                       int* input, float* wte, float* wpe,
-                       int batchSize, int tokenCount, int channelCount)
+    // Order of method parameters:
+    // * Source memory
+    // * Arguments
+    // * Destination memory
+
+    // Calling this "Encoder" is confusing as sounds like the entire other part
+    // of transformer architecture so renamed to "Embed".
+
+    /// <summary>
+    /// Forward pass of the embedding layer.
+    /// </summary>
+    /// <param name="tokenIndices">Pointer to the input tensor of token indices/ids.</param>
+    /// <param name="tokenEmbeddings">Pointer to the token embeddings tensor.</param>
+    /// <param name="positionEmbeddings">Pointer to the position embeddings tensor.</param>
+    /// <param name="batchSize">The size of the batch.</param>
+    /// <param name="tokenCount">The number of tokens.</param>
+    /// <param name="channelCount">The number of channels.</param>
+    /// <param name="output">Pointer to the output tensor.</param>
+    public unsafe static void EmbedForward(
+        // [batchSize, tokenCount], [vocabularySize, channelCount], [maxTokenCount, channelCount]
+        int* tokenIndices, float* tokenEmbeddings, float* positionEmbeddings,
+        int batchSize, int tokenCount, int channelCount,
+        // [batchSize, tokenCount, channelCount]
+        float* output)
     {
-        // output is (batchSize,tokenCount,channelCount). At each position (b,t), a channelCount-dimensional vector summarizing token & position
-        // input is (batchSize,tokenCount) of integers, holding the token ids at each (b,t) position
-        // wte is (vocabularySize,channelCount) of token embeddings, short for "weight token embeddings"
-        // wpe is (maxT,channelCount) of position embeddings, short for "weight positional embedding"
         for (int b = 0; b < batchSize; b++)
         {
             for (int t = 0; t < tokenCount; t++)
             {
-                // seek to the output position in output[b,t,:]
+                // seek to the output position in output[b, t, :]
                 float* output_bt = output + b * tokenCount * channelCount + t * channelCount;
                 // get the index of the token at input[b, t]
-                int ix = input[b * tokenCount + t];
-                // seek to the position in wte corresponding to the token
-                float* wte_ix = wte + ix * channelCount;
-                // seek to the position in wpe corresponding to the position
-                float* wpe_t = wpe + t * channelCount;
-                // add the two vectors and store the result in output[b,t,:]
+                int tokenIndex = tokenIndices[b * tokenCount + t];
+                // seek to the position corresponding to the token [tokenIndex, :]
+                float* tokenEmbeddingVector = tokenEmbeddings + tokenIndex * channelCount;
+                // seek to the position corresponding to the position [t, :]
+                float* positionEmbeddingVector = positionEmbeddings + t * channelCount;
+                // add the two vectors and store the result in output[b, t ,:]
                 for (int i = 0; i < channelCount; i++)
                 {
-                    output_bt[i] = wte_ix[i] + wpe_t[i];
+                    output_bt[i] = tokenEmbeddingVector[i] + positionEmbeddingVector[i];
                 }
             }
         }
     }
 
-    public unsafe static void EncoderBackward(float* dwte, float* dwpe,
-                          float* doutput, int* input,
-                          int batchSize, int tokenCount, int channelCount)
+    /// <summary>
+    /// Backward pass of the embedding layer.
+    /// </summary>
+    /// <param name="outputDerivative">Pointer to the output derivative tensor of shape [batchSize, tokenCount, channelCount].</param>
+    /// <param name="tokenIndices">Pointer to the token indices tensor of shape [batchSize, tokenCount].</param>
+    /// <param name="batchSize">The size of the batch.</param>
+    /// <param name="tokenCount">The number of tokens.</param>
+    /// <param name="channelCount">The number of channels.</param>
+    /// <param name="tokenEmbeddingsDerivative">Pointer to the token embeddings derivative tensor of shape [vocabularySize, channelCount].</param>
+    /// <param name="positionEmbeddingsDerivative">Pointer to the position embeddings derivative tensor of shape [maxTokenCount, channelCount].</param>
+    public unsafe static void EmbedBackward(
+        // [batchSize, tokenCount, channelCount], [batchSize, tokenCount]
+        float* outputDerivative, int* tokenIndices,
+        int batchSize, int tokenCount, int channelCount,
+        // [vocabularySize, channelCount], [maxTokenCount, channelCount]
+        float* tokenEmbeddingsDerivative, float* positionEmbeddingsDerivative)
     {
         for (int b = 0; b < batchSize; b++)
         {
             for (int t = 0; t < tokenCount; t++)
             {
-                float* doutput_bt = doutput + b * tokenCount * channelCount + t * channelCount;
-                int ix = input[b * tokenCount + t];
-                float* dwte_ix = dwte + ix * channelCount;
-                float* dwpe_t = dwpe + t * channelCount;
+                float* outputDerivative_bt = outputDerivative + b * tokenCount * channelCount + t * channelCount;
+                int tokenIndex = tokenIndices[b * tokenCount + t];
+                float* tokenEmbeddingsDerivativeVector = tokenEmbeddingsDerivative + tokenIndex * channelCount;
+                float* positionEmbeddingsDerivativeVector = positionEmbeddingsDerivative + t * channelCount;
                 for (int i = 0; i < channelCount; i++)
                 {
-                    float d = doutput_bt[i];
-                    dwte_ix[i] += d;
-                    dwpe_t[i] += d;
+                    float derivative = outputDerivative_bt[i];
+                    tokenEmbeddingsDerivativeVector[i] += derivative;
+                    positionEmbeddingsDerivativeVector[i] += derivative;
                 }
             }
         }
@@ -277,8 +305,8 @@ public static partial class Llm
                     float* dwrow = dweight + o * inputChannelCount;
                     float d = doutput_bt[o];
                     if (dbias != null) { dbias[o] += d; }
-                    var dVec = new Vector<float>(d);
                     int i = 0;
+                    var dVec = new Vector<float>(d);
                     for (; i < (inputChannelCount - Vector<float>.Count); i += Vector<float>.Count)
                     {
                         var dwstart = dwrow + i;
