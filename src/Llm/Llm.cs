@@ -94,14 +94,28 @@ public static partial class Llm
         }
     }
 
+    /// <summary>
+    /// Forward pass of LayerNorm layer.
+    /// </summary>
+    /// <param name="input">The input tensor of shape [batchSize, tokenCount, channelCount].</param>
+    /// <param name="weight">The weight tensor of shape [channelCount].</param>
+    /// <param name="bias">The bias tensor of shape [channelCount].</param>
+    /// <param name="batchSize">The batch size.</param>
+    /// <param name="tokenCount">The token count.</param>
+    /// <param name="channelCount">The channel count.</param>
+    /// <param name="mean">The mean tensor of shape [batchSize, tokenCount].</param>
+    /// <param name="invStdDev">The inverse standard deviation tensor of shape [batchSize, tokenCount].</param>
+    /// <param name="output">The output tensor of shape [batchSize, tokenCount, channelCount].</param>
     public unsafe static void LayerNormForward(
+        // [batchSize, tokenCount, channelCount], [channelCount], [channelCount]
         float* input, float* weight, float* bias,
         int batchSize, int tokenCount, int channelCount,
+        // [batchSize, tokenCount], [batchSize, tokenCount], [batchSize, tokenCount, channelCount]
         float* mean, float* invStdDev, float* output)
     {
         // reference: https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html
-        // both input and output are (batchSize,tokenCount,channelCount) of the activations
-        // mean and rstd are (batchSize,tokenCount) buffers, to be used later in backward pass
+        // both input and output are [batchSize,tokenCount,channelCount] of the activations
+        // mean and invStdDev are [batchSize,tokenCount] buffers, to be used later in backward pass
         // at each position (b,t) of the input, the channelCount-dimensional vector
         // of activations gets normalized, then scaled and shifted
         float eps = 1e-5f;
@@ -117,16 +131,16 @@ public static partial class Llm
                 {
                     m += x[i];
                 }
-                m = m / channelCount;
+                m /= channelCount;
                 // calculate the variance (without any bias correction)
                 float v = 0.0f;
                 for (int i = 0; i < channelCount; i++)
                 {
-                    float xshift = x[i] - m;
-                    v += xshift * xshift;
+                    float xMinusMean = x[i] - m;
+                    v += xMinusMean * xMinusMean;
                 }
-                v = v / channelCount;
-                // calculate the rstd (reciprocal standard deviation)
+                v /= channelCount;
+                // calculate the invStdDev (reciprocal standard deviation)
                 float s = 1.0f / MathF.Sqrt(v + eps);
                 // seek to the output position in output[b,t,:]
                 float* output_bt = output + b * tokenCount * channelCount + t * channelCount;
@@ -136,7 +150,7 @@ public static partial class Llm
                     float o = n * weight[i] + bias[i]; // scale and shift
                     output_bt[i] = o; // write
                 }
-                // cache the mean and rstd for the backward pass later
+                // cache the mean and invStdDev for the backward pass later
                 mean[b * tokenCount + t] = m;
                 invStdDev[b * tokenCount + t] = s;
             }
