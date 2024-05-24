@@ -454,7 +454,7 @@ internal static partial class Gpt2
         MatMulBackward(grads_acts.lnf, grads.wte, null, grads_acts.logits, acts.lnf, parameters.wte, B, T, C, V);
         float* residual = acts.residual3 + (L - 1) * B * T * C; // last layer's residual
         float* dresidual = grads_acts.residual3 + (L - 1) * B * T * C; // write to last layer's residual
-        LayerNormBackward(dresidual, grads.lnfw, grads.lnfb, grads_acts.lnf, residual, parameters.lnfw, acts.lnf_mean, acts.lnf_rstd, B, T, C);
+        LayerNormBackward(grads_acts.lnf, residual, parameters.lnfw, acts.lnf_mean, acts.lnf_rstd, B, T, C, grads.lnfw, grads.lnfb, dresidual);
 
         for (int l = L - 1; l >= 0; l--)
         {
@@ -514,12 +514,12 @@ internal static partial class Gpt2
             MatMulBackward(dl_fch_gelu, dl_fcprojw, dl_fcprojb, dl_fcproj, l_fch_gelu, l_fcprojw, B, T, 4 * C, C);
             GeLUBackward(dl_fch, l_fch, dl_fch_gelu, B * T * 4 * C);
             MatMulBackward(dl_ln2, dl_fcw, dl_fcb, dl_fch, l_ln2, l_fcw, B, T, C, 4 * C);
-            LayerNormBackward(dl_residual2, dl_ln2w, dl_ln2b, dl_ln2, l_residual2, l_ln2w, l_ln2_mean, l_ln2_rstd, B, T, C);
+            LayerNormBackward(dl_ln2, l_residual2, l_ln2w, l_ln2_mean, l_ln2_rstd, B, T, C, dl_ln2w, dl_ln2b, dl_residual2);
             ResidualBackward(dresidual, dl_attproj, dl_residual2, B * T * C);
             MatMulBackward(dl_atty, dl_attprojw, dl_attprojb, dl_attproj, l_atty, l_attprojw, B, T, C, C);
             AttentionBackward(dl_qkv, dl_preatt, dl_att, dl_atty, l_qkv, l_att, B, T, C, NH);
             MatMulBackward(dl_ln1, dl_qkvw, dl_qkvb, dl_qkv, l_ln1, l_qkvw, B, T, C, 3 * C);
-            LayerNormBackward(dresidual, dl_ln1w, dl_ln1b, dl_ln1, residual, l_ln1w, l_ln1_mean, l_ln1_rstd, B, T, C);
+            LayerNormBackward(dl_ln1, residual, l_ln1w, l_ln1_mean, l_ln1_rstd, B, T, C, dl_ln1w, dl_ln1b, dresidual);
         }
         EmbedBackward(grads_acts.encoded, model->inputs, B, T, C, grads.wte, grads.wpe);
     }

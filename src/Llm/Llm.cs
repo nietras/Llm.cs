@@ -62,33 +62,33 @@ public static partial class Llm
     /// <summary>
     /// Backward pass of the embedding layer.
     /// </summary>
-    /// <param name="outputDerivative">Pointer to the output derivative tensor of shape [batchSize, tokenCount, channelCount].</param>
+    /// <param name="outputGrad">Pointer to the output derivative tensor of shape [batchSize, tokenCount, channelCount].</param>
     /// <param name="tokenIndices">Pointer to the token indices tensor of shape [batchSize, tokenCount].</param>
     /// <param name="batchSize">The size of the batch.</param>
     /// <param name="tokenCount">The number of tokens.</param>
     /// <param name="channelCount">The number of channels.</param>
-    /// <param name="tokenEmbeddingsDerivative">Pointer to the token embeddings derivative tensor of shape [vocabularySize, channelCount].</param>
-    /// <param name="positionEmbeddingsDerivative">Pointer to the position embeddings derivative tensor of shape [maxTokenCount, channelCount].</param>
+    /// <param name="tokenEmbeddingsGrad">Pointer to the token embeddings derivative tensor of shape [vocabularySize, channelCount].</param>
+    /// <param name="positionEmbeddingsGrad">Pointer to the position embeddings derivative tensor of shape [maxTokenCount, channelCount].</param>
     public unsafe static void EmbedBackward(
         // [batchSize, tokenCount, channelCount], [batchSize, tokenCount]
-        float* outputDerivative, int* tokenIndices,
+        float* outputGrad, int* tokenIndices,
         int batchSize, int tokenCount, int channelCount,
         // [vocabularySize, channelCount], [maxTokenCount, channelCount]
-        float* tokenEmbeddingsDerivative, float* positionEmbeddingsDerivative)
+        float* tokenEmbeddingsGrad, float* positionEmbeddingsGrad)
     {
         for (int b = 0; b < batchSize; b++)
         {
             for (int t = 0; t < tokenCount; t++)
             {
-                float* outputDerivative_bt = outputDerivative + b * tokenCount * channelCount + t * channelCount;
+                float* outputGrad_bt = outputGrad + b * tokenCount * channelCount + t * channelCount;
                 int tokenIndex = tokenIndices[b * tokenCount + t];
-                float* tokenEmbeddingsDerivativeVector = tokenEmbeddingsDerivative + tokenIndex * channelCount;
-                float* positionEmbeddingsDerivativeVector = positionEmbeddingsDerivative + t * channelCount;
+                float* tokenEmbeddingsGradVector = tokenEmbeddingsGrad + tokenIndex * channelCount;
+                float* positionEmbeddingsGradVector = positionEmbeddingsGrad + t * channelCount;
                 for (int i = 0; i < channelCount; i++)
                 {
-                    float derivative = outputDerivative_bt[i];
-                    tokenEmbeddingsDerivativeVector[i] += derivative;
-                    positionEmbeddingsDerivativeVector[i] += derivative;
+                    float derivative = outputGrad_bt[i];
+                    tokenEmbeddingsGradVector[i] += derivative;
+                    positionEmbeddingsGradVector[i] += derivative;
                 }
             }
         }
@@ -157,29 +157,33 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void LayerNormBackward(float* dinput, float* dweight, float* dbias,
-                            float* doutput, float* input, float* weight, float* mean, float* rstd,
-                            int batchSize, int tokenCount, int channelCount)
+    public unsafe static void LayerNormBackward(
+        float* outputGrad, float* input, float* weight, float* mean, float* invStdDev,
+        int batchSize, int tokenCount, int channelCount,
+        float* weightGrad, float* biasGrad, float* inputGrad)
     {
         for (int b = 0; b < batchSize; b++)
         {
             for (int t = 0; t < tokenCount; t++)
             {
-                LayerNormBackwardAtBatchToken(dinput, dweight, dbias, doutput, input, weight, mean, rstd, tokenCount, channelCount, b, t);
+                LayerNormBackwardAtBatchToken(
+                    outputGrad, input, weight, mean, invStdDev,
+                    tokenCount, channelCount, b, t,
+                    weightGrad, biasGrad, inputGrad);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         static unsafe void LayerNormBackwardAtBatchToken(
-            float* dinput, float* dweight, float* dbias, float* doutput,
-            float* input, float* weight, float* mean, float* rstd,
-            int tokenCount, int channelCount, int b, int t)
+            float* outputGrad, float* input, float* weight, float* mean, float* invStdDev,
+            int tokenCount, int channelCount, int b, int t,
+            float* weightGrad, float* biasGrad, float* inputGrad)
         {
-            float* doutput_bt = doutput + b * tokenCount * channelCount + t * channelCount;
+            float* doutput_bt = outputGrad + b * tokenCount * channelCount + t * channelCount;
             float* input_bt = input + b * tokenCount * channelCount + t * channelCount;
-            float* dinput_bt = dinput + b * tokenCount * channelCount + t * channelCount;
+            float* dinput_bt = inputGrad + b * tokenCount * channelCount + t * channelCount;
             float mean_bt = mean[b * tokenCount + t];
-            float rstd_bt = rstd[b * tokenCount + t];
+            float rstd_bt = invStdDev[b * tokenCount + t];
 
             // first: two reduce operations
             float dnorm_mean = 0.0f;
@@ -191,8 +195,8 @@ public static partial class Llm
                 dnorm_mean += dnorm_i;
                 dnorm_norm_mean += dnorm_i * norm_bti;
             }
-            dnorm_mean = dnorm_mean / channelCount;
-            dnorm_norm_mean = dnorm_norm_mean / channelCount;
+            dnorm_mean /= channelCount;
+            dnorm_norm_mean /= channelCount;
 
             // now iterate again and accumulate all the gradients
             for (int i = 0; i < channelCount; i++)
@@ -200,9 +204,9 @@ public static partial class Llm
                 float norm_bti = (input_bt[i] - mean_bt) * rstd_bt;
                 float dnorm_i = weight[i] * doutput_bt[i];
                 // gradient contribution to bias
-                dbias[i] += doutput_bt[i];
+                biasGrad[i] += doutput_bt[i];
                 // gradient contribution to weight
-                dweight[i] += norm_bti * doutput_bt[i];
+                weightGrad[i] += norm_bti * doutput_bt[i];
                 // gradient contribution to input
                 float dval = 0.0f;
                 dval += dnorm_i; // term 1
@@ -256,8 +260,8 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void MatMulBackward(float* dinput, float* dweight, float* dbias,
-                         float* doutput, float* input, float* weight,
+    public unsafe static void MatMulBackward(float* inputGrad, float* weightGrad, float* biasGrad,
+                         float* outputGrad, float* input, float* weight,
                          int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount)
     {
         // most of the running time is spent here and in matmul_forward
@@ -268,17 +272,17 @@ public static partial class Llm
         //#pragma omp parallel for collapse(2)
         P.ForRanges(batchSize, tokenCount, (b, t) =>
         {
-            MatMulBackwardForInputAtBatchToken(dinput, doutput, weight, tokenCount, inputChannelCount, outputChannelCount, b, t);
+            MatMulBackwardForInputAtBatchToken(inputGrad, outputGrad, weight, tokenCount, inputChannelCount, outputChannelCount, b, t);
         });
         //}
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         static unsafe void MatMulBackwardForInputAtBatchToken(
-            float* dinput, float* doutput, float* weight,
+            float* inputGrad, float* outputGrad, float* weight,
             int tokenCount, int inputChannelCount, int outputChannelCount,
             int b, int t)
         {
-            float* doutput_bt = doutput + b * tokenCount * outputChannelCount + t * outputChannelCount;
-            float* dinput_bt = dinput + b * tokenCount * inputChannelCount + t * inputChannelCount;
+            float* doutput_bt = outputGrad + b * tokenCount * outputChannelCount + t * outputChannelCount;
+            float* dinput_bt = inputGrad + b * tokenCount * inputChannelCount + t * inputChannelCount;
             for (int o = 0; o < outputChannelCount; o++)
             {
                 float* wrow = weight + o * inputChannelCount;
@@ -303,11 +307,11 @@ public static partial class Llm
         //#pragma omp parallel for
         P.For(0, outputChannelCount, o =>
         {
-            MatMulBackwardParametersAtOutputChannel(dweight, dbias, doutput, input, batchSize, tokenCount, inputChannelCount, outputChannelCount, o);
+            MatMulBackwardParametersAtOutputChannel(weightGrad, biasGrad, outputGrad, input, batchSize, tokenCount, inputChannelCount, outputChannelCount, o);
         });
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         static unsafe void MatMulBackwardParametersAtOutputChannel(
-            float* dweight, float* dbias, float* doutput, float* input,
+            float* weightGrad, float* biasGrad, float* outputGrad, float* input,
             int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount,
             int o)
         {
@@ -315,11 +319,11 @@ public static partial class Llm
             {
                 for (int t = 0; t < tokenCount; t++)
                 {
-                    float* doutput_bt = doutput + b * tokenCount * outputChannelCount + t * outputChannelCount;
+                    float* doutput_bt = outputGrad + b * tokenCount * outputChannelCount + t * outputChannelCount;
                     float* input_bt = input + b * tokenCount * inputChannelCount + t * inputChannelCount;
-                    float* dwrow = dweight + o * inputChannelCount;
+                    float* dwrow = weightGrad + o * inputChannelCount;
                     float d = doutput_bt[o];
-                    if (dbias != null) { dbias[o] += d; }
+                    if (biasGrad != null) { biasGrad[o] += d; }
                     int i = 0;
                     var dVec = new Vector<float>(d);
                     for (; i < (inputChannelCount - Vector<float>.Count); i += Vector<float>.Count)
@@ -446,13 +450,13 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void AttentionBackward(float* dinput, float* dpreatt, float* datt,
-                            float* doutput, float* input, float* att,
+    public unsafe static void AttentionBackward(float* inputGrad, float* dpreatt, float* datt,
+                            float* outputGrad, float* input, float* att,
                             int batchSize, int tokenCount, int channelCount, int headCount)
     {
-        // input/dinput are (batchSize, tokenCount, 3C) Q,K,vocabularySize
+        // input/inputGrad are (batchSize, tokenCount, 3C) Q,K,vocabularySize
         // att/datt/dpreatt are (batchSize, headCount, tokenCount, tokenCount)
-        // doutput is (batchSize, tokenCount, channelCount)
+        // outputGrad is (batchSize, tokenCount, channelCount)
         int C3 = channelCount * 3;
         int headSize = channelCount / headCount; // head size
         float scale = 1.0f / MathF.Sqrt(headSize);
@@ -463,40 +467,40 @@ public static partial class Llm
         //    {
         //        for (int h = 0; h < headCount; h++)
         //        {
-        //            AttentionBackwardAtBatchTokenHead(dinput, dpreatt, datt, doutput, input, att, tokenCount, channelCount, headCount, C3, headSize, scale, b, t, h);
+        //            AttentionBackwardAtBatchTokenHead(inputGrad, dpreatt, datt, outputGrad, input, att, tokenCount, channelCount, headCount, C3, headSize, scale, b, t, h);
         //        }
         //    }
         //}
         // Cannot simply parallize like this since some derivatives are "shared"
-        // like dinput (derivative of input which is output from this method )
+        // like inputGrad (derivative of input which is output from this method )
         //P.ForRanges(batchSize, tokenCount, headCount, (b, t, h) =>
         //{
-        //    AttentionBackwardAtBatchTokenHead(dinput, dpreatt, datt, doutput, input, att, tokenCount, channelCount, headCount, C3, headSize, scale, b, t, h);
+        //    AttentionBackwardAtBatchTokenHead(inputGrad, dpreatt, datt, outputGrad, input, att, tokenCount, channelCount, headCount, C3, headSize, scale, b, t, h);
         //});
         P.ForRanges(batchSize, headCount, (b, h) =>
         {
             for (int t = 0; t < tokenCount; t++)
             {
-                AttentionBackwardAtBatchTokenHead(dinput, dpreatt, datt, doutput, input, att, tokenCount, channelCount, headCount, C3, headSize, scale, b, t, h);
+                AttentionBackwardAtBatchTokenHead(inputGrad, dpreatt, datt, outputGrad, input, att, tokenCount, channelCount, headCount, C3, headSize, scale, b, t, h);
             }
         });
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        static unsafe void AttentionBackwardAtBatchTokenHead(float* dinput, float* dpreatt, float* datt, float* doutput, float* input, float* att,
+        static unsafe void AttentionBackwardAtBatchTokenHead(float* inputGrad, float* dpreatt, float* datt, float* outputGrad, float* input, float* att,
             int tokenCount, int channelCount, int headCount, int C3, int headSize, float scale, int b, int t, int h)
         {
             float* att_bth = att + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
             float* datt_bth = datt + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
             float* dpreatt_bth = dpreatt + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
-            float* dquery_t = dinput + b * tokenCount * C3 + t * C3 + h * headSize;
+            float* dquery_t = inputGrad + b * tokenCount * C3 + t * C3 + h * headSize;
             float* query_t = input + b * tokenCount * C3 + t * C3 + h * headSize;
 
             // backward pass 4, through the value accumulation
-            float* doutput_bth = doutput + b * tokenCount * channelCount + t * channelCount + h * headSize;
+            float* doutput_bth = outputGrad + b * tokenCount * channelCount + t * channelCount + h * headSize;
             for (int t2 = 0; t2 <= t; t2++)
             {
                 float* value_t2 = input + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount * 2; // +channelCount*2 because it's value
-                float* dvalue_t2 = dinput + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount * 2;
+                float* dvalue_t2 = inputGrad + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount * 2;
                 int i = 0;
                 var att_bth_t2 = att_bth[t2];
                 var datt_bth_sum = 0f;
@@ -550,7 +554,7 @@ public static partial class Llm
             for (int t2 = 0; t2 <= t; t2++)
             {
                 float* key_t2 = input + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount; // +channelCount because it's key
-                float* dkey_t2 = dinput + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount; // +channelCount because it's key
+                float* dkey_t2 = inputGrad + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount; // +channelCount because it's key
                 var dpreatt_bth_t2_scaled = dpreatt_bth[t2] * scale;
                 for (int i = 0; i < headSize; i++)
                 {
@@ -577,20 +581,20 @@ public static partial class Llm
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public unsafe static void GeLUBackward(float* dinput, float* input, float* doutput, int count)
+    public unsafe static void GeLUBackward(float* inputGrad, float* input, float* outputGrad, int count)
     {
         // TODO: Chunk!
         P.For(0, count, i =>
         {
             float x = input[i];
             var local_grad = GeLUGrad(x);
-            dinput[i] += local_grad * doutput[i];
+            inputGrad[i] += local_grad * outputGrad[i];
         });
         //for (int i = 0; i < count; i++)
         //{
         //    float x = input[i];
         //    var local_grad = GeLUGrad(x);
-        //    dinput[i] += local_grad * doutput[i];
+        //    inputGrad[i] += local_grad * outputGrad[i];
         //}
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -614,12 +618,12 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void ResidualBackward(float* dinput1, float* dinput2, float* doutput, int count)
+    public unsafe static void ResidualBackward(float* dinput1, float* dinput2, float* outputGrad, int count)
     {
         for (int i = 0; i < count; i++)
         {
-            dinput1[i] += doutput[i];
-            dinput2[i] += doutput[i];
+            dinput1[i] += outputGrad[i];
+            dinput2[i] += outputGrad[i];
         }
     }
 
