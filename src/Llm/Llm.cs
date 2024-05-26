@@ -230,84 +230,45 @@ public static partial class Llm
         // OC is short for "output channels"
         // input is (batchSize,tokenCount,channelCount), weight is (OC, channelCount), bias is (OC)
         // output will be (batchSize,tokenCount,OC)
-        //(int b;
-        if ((batchSize * tokenCount) % Vector<float>.Count == 0)
+        //#pragma omp parallel for collapse(2)
+        P.ForRanges(batchSize, tokenCount, (b, t) =>
         {
-            P.For(0, (batchSize * tokenCount) / Vector<float>.Count, obt =>
-            {
-                MatMulForwardAtBatchTokenLoopUnrolled(output, input, weight, bias,
-                    tokenCount, inputChannelCount, outputChannelCount,
-                    obt * Vector<float>.Count);
-            });
-        }
-        else
-        {
-            //#pragma omp parallel for collapse(2)
-            P.ForRanges(batchSize, tokenCount, (b, t) =>
-            {
-                MatMulForwardAtBatchToken(output, input, weight, bias, tokenCount, inputChannelCount, outputChannelCount, b, t);
-            });
-        }
+            MatMulForwardAtBatchToken(output, input, weight, bias, tokenCount, inputChannelCount, outputChannelCount, b, t);
+        });
+
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         static unsafe void MatMulForwardAtBatchToken(
             float* output, float* input, float* weight, float* bias,
             int tokenCount, int inputChannelCount, int outputChannelCount,
-            int b, int t)
+            nint b, nint t)
         {
             float* output_bt = output + b * tokenCount * outputChannelCount + t * outputChannelCount;
             float* input_bt = input + b * tokenCount * inputChannelCount + t * inputChannelCount;
-            for (int o = 0; o < outputChannelCount; o++)
+            for (nint o = 0; o < outputChannelCount; o++)
             {
-                float val = (bias != null) ? bias[o] : 0.0f;
+                float result = (bias != null) ? bias[o] : 0.0f;
                 float* wrow = weight + o * inputChannelCount;
                 var sum = Vector<float>.Zero;
-                int i = 0;
+                nint i = 0;
+
+                //var sum2 = Vector<float>.Zero;
+                //for (; i < (inputChannelCount - Vector<float>.Count * 2); i += Vector<float>.Count * 2)
+                //{
+                //    sum += Vector.Load(input_bt + i) * Vector.Load(wrow + i);
+                //    sum2 += Vector.Load(input_bt + i + Vector<float>.Count) * Vector.Load(wrow + i + Vector<float>.Count);
+                //}
+                //sum += sum2;
+
                 for (; i < (inputChannelCount - Vector<float>.Count); i += Vector<float>.Count)
                 {
                     sum += Vector.Load(input_bt + i) * Vector.Load(wrow + i);
                 }
-                val += Vector.Sum(sum);
+                result += Vector.Sum(sum);
                 for (; i < inputChannelCount; i++)
                 {
-                    val += input_bt[i] * wrow[i];
+                    result += input_bt[i] * wrow[i];
                 }
-                output_bt[o] = val;
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        static unsafe void MatMulForwardAtBatchTokenLoopUnrolled(
-            float* output, float* input, float* weight, float* bias,
-            int tokenCount, int inputChannelCount, int outputChannelCount,
-            int obt)
-        {
-            var temp = stackalloc float[Vector<float>.Count];
-            for (int o = 0; o < outputChannelCount; o++)
-            {
-                // we'll keep Vector<float>.Count many results in registers
-                // initialize with bias or zero
-                var result = bias != null ? new Vector<float>(bias[o]) : Vector<float>.Zero;
-
-                float* weight_o = weight + o * inputChannelCount;
-                // inner loops. Because we do Vector<float>.Count steps of inner bt, we can cache
-                // the value of weight[i + o * C] and reuse it.
-                // TODO: FMA
-                for (int i = 0; i < inputChannelCount; i++)
-                {
-                    float w = weight_o[i];
-                    float* input_obti = input + obt * inputChannelCount + i;
-                    for (int ibt = 0; ibt < Vector<float>.Count; ibt++)
-                    {
-                        temp[ibt] = input_obti[ibt * inputChannelCount];
-                    }
-                    result += Vector.Load(temp) * w;
-                }
-                // write back results to main memory
-                float* output_obti = output + obt * outputChannelCount + o;
-                for (int ibt = 0; ibt < Vector<float>.Count; ibt++)
-                {
-                    output_obti[ibt * outputChannelCount] = result[ibt];
-                }
+                output_bt[o] = result;
             }
         }
     }
@@ -330,17 +291,17 @@ public static partial class Llm
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         static unsafe void MatMulBackwardForInputAtBatchToken(
             float* δinput, float* δoutput, float* weight,
-            int tokenCount, int inputChannelCount, int outputChannelCount,
-            int b, int t)
+            nint tokenCount, nint inputChannelCount, nint outputChannelCount,
+            nint b, nint t)
         {
             float* doutput_bt = δoutput + b * tokenCount * outputChannelCount + t * outputChannelCount;
             float* dinput_bt = δinput + b * tokenCount * inputChannelCount + t * inputChannelCount;
-            for (int o = 0; o < outputChannelCount; o++)
+            for (nint o = 0; o < outputChannelCount; o++)
             {
                 float* wrow = weight + o * inputChannelCount;
                 float d = doutput_bt[o];
                 var dVec = new Vector<float>(d);
-                int i = 0;
+                nint i = 0;
                 for (; i < (inputChannelCount - Vector<float>.Count); i += Vector<float>.Count)
                 {
                     var dinput_bt_start = dinput_bt + i;
@@ -364,19 +325,19 @@ public static partial class Llm
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         static unsafe void MatMulBackwardParametersAtOutputChannel(
             float* δweight, float* δbias, float* δoutput, float* input,
-            int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount,
-            int o)
+            nint batchSize, nint tokenCount, nint inputChannelCount, nint outputChannelCount,
+            nint o)
         {
-            for (int b = 0; b < batchSize; b++)
+            for (nint b = 0; b < batchSize; b++)
             {
-                for (int t = 0; t < tokenCount; t++)
+                for (nint t = 0; t < tokenCount; t++)
                 {
                     float* doutput_bt = δoutput + b * tokenCount * outputChannelCount + t * outputChannelCount;
                     float* input_bt = input + b * tokenCount * inputChannelCount + t * inputChannelCount;
                     float* dwrow = δweight + o * inputChannelCount;
                     float d = doutput_bt[o];
                     if (δbias != null) { δbias[o] += d; }
-                    int i = 0;
+                    nint i = 0;
                     var dVec = new Vector<float>(d);
                     for (; i < (inputChannelCount - Vector<float>.Count); i += Vector<float>.Count)
                     {
