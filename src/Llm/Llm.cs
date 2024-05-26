@@ -55,9 +55,9 @@ public static partial class Llm
                 // seek to the position corresponding to the position [t, :]
                 float* positionEmbeddingVector = positionEmbeddings + t * channelCount;
                 // add the two vectors and store the result in output[b, t ,:]
-                for (int i = 0; i < channelCount; i++)
+                for (int c = 0; c < channelCount; c++)
                 {
-                    output_bt[i] = tokenEmbeddingVector[i] + positionEmbeddingVector[i];
+                    output_bt[c] = tokenEmbeddingVector[c] + positionEmbeddingVector[c];
                 }
             }
         }
@@ -88,11 +88,11 @@ public static partial class Llm
                 int tokenIndex = tokenIndices[b * tokenCount + t];
                 float* tokenEmbeddingsGradVector = δtokenEmbeddings + tokenIndex * channelCount;
                 float* positionEmbeddingsGradVector = δpositionEmbeddings + t * channelCount;
-                for (int i = 0; i < channelCount; i++)
+                for (int c = 0; c < channelCount; c++)
                 {
-                    float derivative = outputGrad_bt[i];
-                    tokenEmbeddingsGradVector[i] += derivative;
-                    positionEmbeddingsGradVector[i] += derivative;
+                    float derivative = outputGrad_bt[c];
+                    tokenEmbeddingsGradVector[c] += derivative;
+                    positionEmbeddingsGradVector[c] += derivative;
                 }
             }
         }
@@ -122,18 +122,21 @@ public static partial class Llm
         // mean and invStdDev are [batchSize,tokenCount] buffers, to be used later in backward pass
         // at each position (b,t) of the input, the channelCount-dimensional vector
         // of activations gets normalized, then scaled and shifted
-        float eps = 1e-5f;
+        const float eps = 1e-5f;
         for (int b = 0; b < batchSize; b++)
         {
+            float* mean_b = mean + b * tokenCount;
+            float* invStdDev_b = invStdDev + b * tokenCount;
+            float* output_b = output + b * tokenCount * channelCount;
             for (int t = 0; t < tokenCount; t++)
             {
                 // seek to the input position input[b,t,:]
                 float* x = input + b * tokenCount * channelCount + t * channelCount;
                 // calculate the mean
                 float m = 0.0f;
-                for (int i = 0; i < channelCount; i++)
+                for (int c = 0; c < channelCount; c++)
                 {
-                    m += x[i];
+                    m += x[c];
                 }
                 m /= channelCount;
                 // calculate the variance (without any bias correction)
@@ -147,16 +150,16 @@ public static partial class Llm
                 // calculate the invStdDev (reciprocal standard deviation)
                 float s = 1.0f / MathF.Sqrt(v + eps);
                 // seek to the output position in output[b,t,:]
-                float* output_bt = output + b * tokenCount * channelCount + t * channelCount;
-                for (int i = 0; i < channelCount; i++)
+                float* output_bt = output_b + t * channelCount;
+                for (int c = 0; c < channelCount; c++)
                 {
-                    float n = (s * (x[i] - m)); // normalize
-                    float o = n * weight[i] + bias[i]; // scale and shift
-                    output_bt[i] = o; // write
+                    float n = (s * (x[c] - m)); // normalize
+                    float o = n * weight[c] + bias[c]; // scale and shift
+                    output_bt[c] = o; // write
                 }
                 // cache the mean and invStdDev for the backward pass later
-                mean[b * tokenCount + t] = m;
-                invStdDev[b * tokenCount + t] = s;
+                mean_b[t] = m;
+                invStdDev_b[t] = s;
             }
         }
     }
@@ -183,41 +186,39 @@ public static partial class Llm
             int tokenCount, int channelCount, int b, int t,
             float* δweight, float* δbias, float* δinput)
         {
-            float* doutput_bt = δoutput + b * tokenCount * channelCount + t * channelCount;
+            float* δoutput_bt = δoutput + b * tokenCount * channelCount + t * channelCount;
             float* input_bt = input + b * tokenCount * channelCount + t * channelCount;
-            float* dinput_bt = δinput + b * tokenCount * channelCount + t * channelCount;
             float mean_bt = mean[b * tokenCount + t];
-            float rstd_bt = invStdDev[b * tokenCount + t];
+            float invStdDev_bt = invStdDev[b * tokenCount + t];
+
+            float* δinput_bt = δinput + b * tokenCount * channelCount + t * channelCount;
 
             // first: two reduce operations
             float dnorm_mean = 0.0f;
             float dnorm_norm_mean = 0.0f;
-            for (int i = 0; i < channelCount; i++)
+            for (int c = 0; c < channelCount; c++)
             {
-                float norm_bti = (input_bt[i] - mean_bt) * rstd_bt;
-                float dnorm_i = weight[i] * doutput_bt[i];
-                dnorm_mean += dnorm_i;
-                dnorm_norm_mean += dnorm_i * norm_bti;
+                float norm_btc = (input_bt[c] - mean_bt) * invStdDev_bt;
+                float dnorm_c = weight[c] * δoutput_bt[c];
+                dnorm_mean += dnorm_c;
+                dnorm_norm_mean += dnorm_c * norm_btc;
             }
             dnorm_mean /= channelCount;
             dnorm_norm_mean /= channelCount;
 
             // now iterate again and accumulate all the gradients
-            for (int i = 0; i < channelCount; i++)
+            for (int c = 0; c < channelCount; c++)
             {
-                float norm_bti = (input_bt[i] - mean_bt) * rstd_bt;
-                float dnorm_i = weight[i] * doutput_bt[i];
+                float norm_btc = (input_bt[c] - mean_bt) * invStdDev_bt;
+                float dnorm_c = weight[c] * δoutput_bt[c];
                 // gradient contribution to bias
-                δbias[i] += doutput_bt[i];
+                δbias[c] += δoutput_bt[c];
                 // gradient contribution to weight
-                δweight[i] += norm_bti * doutput_bt[i];
+                δweight[c] += norm_btc * δoutput_bt[c];
                 // gradient contribution to input
-                float dval = 0.0f;
-                dval += dnorm_i; // term 1
-                dval -= dnorm_mean; // term 2
-                dval -= norm_bti * dnorm_norm_mean; // term 3
-                dval *= rstd_bt; // final scale
-                dinput_bt[i] += dval;
+                float δ = (dnorm_c - dnorm_mean - norm_btc * dnorm_norm_mean)
+                    * invStdDev_bt; // final scale
+                δinput_bt[c] += δ;
             }
         }
     }
@@ -294,24 +295,24 @@ public static partial class Llm
             nint tokenCount, nint inputChannelCount, nint outputChannelCount,
             nint b, nint t)
         {
-            float* doutput_bt = δoutput + b * tokenCount * outputChannelCount + t * outputChannelCount;
-            float* dinput_bt = δinput + b * tokenCount * inputChannelCount + t * inputChannelCount;
+            float* δoutput_bt = δoutput + b * tokenCount * outputChannelCount + t * outputChannelCount;
+            float* δinput_bt = δinput + b * tokenCount * inputChannelCount + t * inputChannelCount;
             for (nint o = 0; o < outputChannelCount; o++)
             {
                 float* wrow = weight + o * inputChannelCount;
-                float d = doutput_bt[o];
+                float d = δoutput_bt[o];
                 var dVec = new Vector<float>(d);
                 nint i = 0;
                 for (; i < (inputChannelCount - Vector<float>.Count); i += Vector<float>.Count)
                 {
-                    var dinput_bt_start = dinput_bt + i;
-                    var dinput_bt_Vec = Vector.Load(dinput_bt_start);
-                    dinput_bt_Vec += Vector.Load(wrow + i) * dVec;
-                    Vector.Store(dinput_bt_Vec, dinput_bt_start);
+                    var δinput_bt_start = δinput_bt + i;
+                    var δinput_bt_Vec = Vector.Load(δinput_bt_start);
+                    δinput_bt_Vec += Vector.Load(wrow + i) * dVec;
+                    Vector.Store(δinput_bt_Vec, δinput_bt_start);
                 }
                 for (; i < inputChannelCount; i++)
                 {
-                    dinput_bt[i] += wrow[i] * d;
+                    δinput_bt[i] += wrow[i] * d;
                 }
             }
         }
@@ -332,10 +333,10 @@ public static partial class Llm
             {
                 for (nint t = 0; t < tokenCount; t++)
                 {
-                    float* doutput_bt = δoutput + b * tokenCount * outputChannelCount + t * outputChannelCount;
+                    float* δoutput_bt = δoutput + b * tokenCount * outputChannelCount + t * outputChannelCount;
                     float* input_bt = input + b * tokenCount * inputChannelCount + t * inputChannelCount;
                     float* dwrow = δweight + o * inputChannelCount;
-                    float d = doutput_bt[o];
+                    float d = δoutput_bt[o];
                     if (δbias != null) { δbias[o] += d; }
                     nint i = 0;
                     var dVec = new Vector<float>(d);
@@ -509,7 +510,7 @@ public static partial class Llm
             float* query_t = input + b * tokenCount * C3 + t * C3 + h * headSize;
 
             // backward pass 4, through the value accumulation
-            float* doutput_bth = δoutput + b * tokenCount * channelCount + t * channelCount + h * headSize;
+            float* δoutput_bth = δoutput + b * tokenCount * channelCount + t * channelCount + h * headSize;
             for (int t2 = 0; t2 <= t; t2++)
             {
                 float* value_t2 = input + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount * 2; // +channelCount*2 because it's value
@@ -527,7 +528,7 @@ public static partial class Llm
                         // output_bth[i] += att_bth[t2] * value_t2[i];
                         // so now we have:
                         var valueVector = Vector.Load(value_t2 + i);
-                        var doutputVector = Vector.Load(doutput_bth + i);
+                        var doutputVector = Vector.Load(δoutput_bth + i);
                         datt_bth_sum_vector += valueVector * doutputVector;
                         var dValuePtr = dvalue_t2 + i;
                         var dValueVector = Vector.Load(dValuePtr);
@@ -541,10 +542,10 @@ public static partial class Llm
                     // in the forward pass this was:
                     // output_bth[i] += att_bth[t2] * value_t2[i];
                     // so now we have:
-                    //datt_bth[t2] += value_t2[i] * doutput_bth[i];
-                    //dvalue_t2[i] += att_bth[t2] * doutput_bth[i];
-                    datt_bth_sum += value_t2[i] * doutput_bth[i];
-                    dvalue_t2[i] += att_bth_t2 * doutput_bth[i];
+                    //datt_bth[t2] += value_t2[i] * δoutput_bth[i];
+                    //dvalue_t2[i] += att_bth[t2] * δoutput_bth[i];
+                    datt_bth_sum += value_t2[i] * δoutput_bth[i];
+                    dvalue_t2[i] += att_bth_t2 * δoutput_bth[i];
                 }
                 datt_bth[t2] += datt_bth_sum;
             }
