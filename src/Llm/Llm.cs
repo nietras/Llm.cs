@@ -247,10 +247,73 @@ public static partial class Llm
         {
             float* output_bt = output + b * tokenCount * outputChannelCount + t * outputChannelCount;
             float* input_bt = input + b * tokenCount * inputChannelCount + t * inputChannelCount;
-            for (nint o = 0; o < outputChannelCount; o++)
+            nint oc = 0;
+            if (true)
             {
-                float result = (bias != null) ? bias[o] : 0.0f;
-                float* wrow = weight + o * inputChannelCount;
+                const int Unroll = 4;
+                for (; oc < (outputChannelCount - Unroll); oc += Unroll)
+                {
+                    float result0 = (bias != null) ? bias[oc + 0] : 0.0f;
+                    float result1 = (bias != null) ? bias[oc + 1] : 0.0f;
+                    float result2 = (bias != null) ? bias[oc + 2] : 0.0f;
+                    float result3 = (bias != null) ? bias[oc + 3] : 0.0f;
+                    //var results = (bias != null) ? Vector128.Load(bias + oc) : Vector128<float>.Zero;
+
+                    float* wrow0 = weight + (oc + 0) * inputChannelCount;
+                    float* wrow1 = weight + (oc + 1) * inputChannelCount;
+                    float* wrow2 = weight + (oc + 2) * inputChannelCount;
+                    float* wrow3 = weight + (oc + 3) * inputChannelCount;
+                    var sum0 = Vector<float>.Zero;
+                    var sum1 = Vector<float>.Zero;
+                    var sum2 = Vector<float>.Zero;
+                    var sum3 = Vector<float>.Zero;
+                    nint ic = 0;
+                    for (; ic < (inputChannelCount - Vector<float>.Count); ic += Vector<float>.Count)
+                    {
+                        //var input_btic = Vector.Load(input_bt + ic).AsVector256();
+                        //sum0 = Fma.MultiplyAdd(input_btic, Vector256.Load(wrow0 + ic), sum0.AsVector256()).AsVector();
+                        //sum1 = Fma.MultiplyAdd(input_btic, Vector256.Load(wrow1 + ic), sum1.AsVector256()).AsVector();
+                        //sum2 = Fma.MultiplyAdd(input_btic, Vector256.Load(wrow2 + ic), sum2.AsVector256()).AsVector();
+                        //sum3 = Fma.MultiplyAdd(input_btic, Vector256.Load(wrow3 + ic), sum3.AsVector256()).AsVector();
+                        var input_btic = Vector.Load(input_bt + ic);
+                        sum0 += input_btic * Vector.Load(wrow0 + ic);
+                        sum1 += input_btic * Vector.Load(wrow1 + ic);
+                        sum2 += input_btic * Vector.Load(wrow2 + ic);
+                        sum3 += input_btic * Vector.Load(wrow3 + ic);
+                    }
+
+                    result0 += Vector.Sum(sum0);
+                    result1 += Vector.Sum(sum1);
+                    result2 += Vector.Sum(sum2);
+                    result3 += Vector.Sum(sum3);
+                    //var sums = Vector128.Create(Vector.Sum(sum0), Vector.Sum(sum1), Vector.Sum(sum2), Vector.Sum(sum3));
+                    //results += sums;
+
+                    for (; ic < inputChannelCount; ic++)
+                    {
+                        var input_btic = input_bt[ic];
+
+                        //result0 = Single.FusedMultiplyAdd(input_btic, wrow0[ic], result0);
+                        //result1 = Single.FusedMultiplyAdd(input_btic, wrow1[ic], result1);
+                        //result2 = Single.FusedMultiplyAdd(input_btic, wrow2[ic], result2);
+                        //result3 = Single.FusedMultiplyAdd(input_btic, wrow3[ic], result3);
+                        result0 += input_btic * wrow0[ic];
+                        result1 += input_btic * wrow1[ic];
+                        result2 += input_btic * wrow2[ic];
+                        result3 += input_btic * wrow3[ic];
+                        //results += (Vector128.Create(wrow0[ic], wrow1[ic], wrow2[ic], wrow3[ic]) * input_btic);
+                    }
+                    output_bt[oc + 0] = result0;
+                    output_bt[oc + 1] = result1;
+                    output_bt[oc + 2] = result2;
+                    output_bt[oc + 3] = result3;
+                    //Vector128.Store(results, output_bt + oc);
+                }
+            }
+            for (; oc < outputChannelCount; oc++)
+            {
+                float result = (bias != null) ? bias[oc] : 0.0f;
+                float* wrow = weight + oc * inputChannelCount;
                 var sum = Vector<float>.Zero;
                 nint i = 0;
 
@@ -271,7 +334,7 @@ public static partial class Llm
                 {
                     result += input_bt[i] * wrow[i];
                 }
-                output_bt[o] = result;
+                output_bt[oc] = result;
             }
         }
     }
