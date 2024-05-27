@@ -377,24 +377,24 @@ internal static partial class Gpt2
             // now do the forward pass
             LayerNormForward(residual, l_ln1w, l_ln1b, B, T, C, l_ln1_mean, l_ln1_rstd, l_ln1);
             MatMulForward(l_ln1, l_qkvw, l_qkvb, B, T, C, 3 * C, l_qkv);
-            AttentionForward(l_atty, l_preatt, l_att, l_qkv, B, T, C, NH);
+            AttentionForward(l_qkv, B, T, C, NH, l_preatt, l_att, l_atty);
             MatMulForward(l_atty, l_attprojw, l_attprojb, B, T, C, C, l_attproj);
-            ResidualForward(l_residual2, residual, l_attproj, B * T * C);
+            ResidualForward(residual, l_attproj, B * T * C, l_residual2);
             LayerNormForward(l_residual2, l_ln2w, l_ln2b, B, T, C, l_ln2_mean, l_ln2_rstd, l_ln2);
             MatMulForward(l_ln2, l_fcw, l_fcb, B, T, C, 4 * C, l_fch);
-            GeLUForward(l_fch_gelu, l_fch, B * T * 4 * C);
+            GeLUForward(l_fch, B * T * 4 * C, l_fch_gelu);
             MatMulForward(l_fch_gelu, l_fcprojw, l_fcprojb, B, T, 4 * C, C, l_fcproj);
-            ResidualForward(l_residual3, l_residual2, l_fcproj, B * T * C);
+            ResidualForward(l_residual2, l_fcproj, B * T * C, l_residual3);
         }
         residual = acts.residual3 + (L - 1) * B * T * C; // last residual is in residual3
         LayerNormForward(residual, parameters.lnfw, parameters.lnfb, B, T, C, acts.lnf_mean, acts.lnf_rstd, acts.lnf);
         MatMulForward(acts.lnf, parameters.wte, null, B, T, C, V, acts.logits);
-        SoftmaxForward(acts.probs, acts.logits, B, T, V);
+        SoftmaxForward(acts.logits, B, T, V, acts.probs);
 
         // also forward the cross-entropy loss function if we have the targets
         if (targets != null)
         {
-            CrossEntropyForward(model->acts.losses, model->acts.probs, targets, B, T, V);
+            CrossEntropyForward(model->acts.probs, targets, B, T, V, model->acts.losses);
             // for convenience also evaluate the mean loss
             float mean_loss = 0.0f;
             for (int i = 0; i < B * T; i++) { mean_loss += model->acts.losses[i]; }
@@ -451,7 +451,7 @@ internal static partial class Gpt2
         float dloss_mean = 1.0f / (B * T);
         for (int i = 0; i < B * T; i++) { grads_acts.losses[i] = dloss_mean; }
 
-        CrossEntropySoftmaxBackward(grads_acts.logits, grads_acts.losses, acts.probs, model->targets, B, T, V);
+        CrossEntropySoftmaxBackward(acts.probs, model->targets, B, T, V, grads_acts.logits, grads_acts.losses);
         MatMulBackward(grads_acts.logits, acts.lnf, parameters.wte, B, T, C, V, grads.wte, null, grads_acts.lnf);
         float* residual = acts.residual3 + (L - 1) * B * T * C; // last layer's residual
         float* dresidual = grads_acts.residual3 + (L - 1) * B * T * C; // write to last layer's residual
@@ -511,14 +511,14 @@ internal static partial class Gpt2
             float* dl_residual3 = grads_acts.residual3 + l * B * T * C;
 
             // backprop this layer
-            ResidualBackward(dl_residual2, dl_fcproj, dl_residual3, B * T * C);
+            ResidualBackward(dl_residual3, B * T * C, dl_residual2, dl_fcproj);
             MatMulBackward(dl_fcproj, l_fch_gelu, l_fcprojw, B, T, 4 * C, C, dl_fcprojw, dl_fcprojb, dl_fch_gelu);
-            GeLUBackward(dl_fch, l_fch, dl_fch_gelu, B * T * 4 * C);
+            GeLUBackward(dl_fch_gelu, l_fch, B * T * 4 * C, dl_fch);
             MatMulBackward(dl_fch, l_ln2, l_fcw, B, T, C, 4 * C, dl_fcw, dl_fcb, dl_ln2);
             LayerNormBackward(dl_ln2, l_residual2, l_ln2w, l_ln2_mean, l_ln2_rstd, B, T, C, dl_ln2w, dl_ln2b, dl_residual2);
-            ResidualBackward(dresidual, dl_attproj, dl_residual2, B * T * C);
+            ResidualBackward(dl_residual2, B * T * C, dresidual, dl_attproj);
             MatMulBackward(dl_attproj, l_atty, l_attprojw, B, T, C, C, dl_attprojw, dl_attprojb, dl_atty);
-            AttentionBackward(dl_qkv, dl_preatt, dl_att, dl_atty, l_qkv, l_att, B, T, C, NH);
+            AttentionBackward(dl_atty, l_att, l_qkv, B, T, C, NH, dl_preatt, dl_att, dl_qkv);
             MatMulBackward(dl_qkv, l_ln1, l_qkvw, B, T, C, 3 * C, dl_qkvw, dl_qkvb, dl_ln1);
             LayerNormBackward(dl_ln1, residual, l_ln1w, l_ln1_mean, l_ln1_rstd, B, T, C, dl_ln1w, dl_ln1b, dresidual);
         }

@@ -11,7 +11,7 @@ namespace nietras.LargeLanguageModel;
 
 // all the individual layers' forward and backward passes
 // batchSize = B, tokenCount = T, channelCount = C, vocabularySize = V
-public static partial class Llm
+public partial class Llm : ILlm
 {
     // Order of method parameters:
     // * Source memory
@@ -504,9 +504,9 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void AttentionForward(float* output, float* preatt, float* att,
-                           float* input,
-                           int batchSize, int tokenCount, int channelCount, int headCount)
+    public unsafe static void AttentionForward(float* input, int batchSize, int tokenCount,
+                           int channelCount,
+                           int headCount, float* preatt, float* att, float* output)
     {
         // input is (batchSize, tokenCount, 3C) holding the query, key, value (Q, K, vocabularySize) vectors
         // preatt, att are (batchSize, headCount, tokenCount, tokenCount). headCount = number of heads, tokenCount = sequence length
@@ -612,9 +612,9 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void AttentionBackward(float* δinput, float* dpreatt, float* datt,
-                            float* δoutput, float* input, float* att,
-                            int batchSize, int tokenCount, int channelCount, int headCount)
+    public unsafe static void AttentionBackward(float* δoutput, float* att, float* input,
+                            int batchSize, int tokenCount, int channelCount,
+                            int headCount, float* dpreatt, float* datt, float* δinput)
     {
         // input/δinput are (batchSize, tokenCount, 3C) Q,K,vocabularySize
         // att/datt/dpreatt are (batchSize, headCount, tokenCount, tokenCount)
@@ -731,7 +731,7 @@ public static partial class Llm
     }
 
     static readonly float GELU_SCALING_FACTOR = MathF.Sqrt(2.0f / MathF.PI);
-    public unsafe static void GeLUForward(float* output, float* input, int count)
+    public unsafe static void GeLUForward(float* input, int count, float* output)
     {
         // (approximate) GeLU elementwise non-linearity in the MLP block of Transformer
         // TODO: Chunk!
@@ -750,7 +750,7 @@ public static partial class Llm
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public unsafe static void GeLUBackward(float* δinput, float* input, float* δoutput, int count)
+    public unsafe static void GeLUBackward(float* δoutput, float* input, int count, float* δinput)
     {
         // TODO: Chunk!
         P.For(0, count, i =>
@@ -779,7 +779,7 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void ResidualForward(float* output, float* input1, float* input2, int count)
+    public unsafe static void ResidualForward(float* input1, float* input2, int count, float* output)
     {
         for (int i = 0; i < count; i++)
         {
@@ -787,7 +787,7 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void ResidualBackward(float* dinput1, float* dinput2, float* δoutput, int count)
+    public unsafe static void ResidualBackward(float* δoutput, int count, float* dinput1, float* dinput2)
     {
         for (int i = 0; i < count; i++)
         {
@@ -796,7 +796,7 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void SoftmaxForward(float* probs, float* logits, int batchSize, int tokenCount, int vocabularySize)
+    public unsafe static void SoftmaxForward(float* logits, int batchSize, int tokenCount, int vocabularySize, float* probs)
     {
         // output: probs are (batchSize,tokenCount,vocabularySize) of the probabilities (sums to 1.0 in each b,t position)
         // input: logits is (batchSize,tokenCount,vocabularySize) of the unnormalized log probabilities
@@ -830,9 +830,9 @@ public static partial class Llm
         });
     }
 
-    public unsafe static void CrossEntropyForward(float* losses,
-                              float* probs, int* targets,
-                              int batchSize, int tokenCount, int vocabularySize)
+    public unsafe static void CrossEntropyForward(float* probs,
+                              int* targets, int batchSize,
+                              int tokenCount, int vocabularySize, float* losses)
     {
         // output: losses is (batchSize,tokenCount) of the individual losses at each position
         // input: probs are (batchSize,tokenCount,vocabularySize) of the probabilities
@@ -849,9 +849,9 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void CrossEntropySoftmaxBackward(float* dlogits,
-                               float* dlosses, float* probs, int* targets,
-                               int batchSize, int tokenCount, int vocabularySize)
+    public unsafe static void CrossEntropySoftmaxBackward(float* probs,
+                               int* targets, int batchSize, int tokenCount,
+                               int vocabularySize, float* dlogits, float* dlosses)
     {
         // backwards through both softmax and crossentropy
         for (int b = 0; b < batchSize; b++)
