@@ -260,18 +260,38 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void MatMulForward(float* output,
-                        float* input, float* weight, float* bias,
-                        int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount)
+    /// <summary>
+    /// Matrix multiplication between the input tensor and transposed weight tensor 
+    /// and optionally adds bias if not null.
+    /// </summary>
+    /// <remarks>
+    /// Note how this is more of a vector * matrix operation than a matrix * matrix operation, 
+    /// since for each batch and token it multiples input row vector with 
+    /// weight (transposed) matrix and adds bias vector.
+    /// </remarks>
+    /// <param name="input">The input tensor of shape [batchSize, tokenCount, inputChannelCount].</param>
+    /// <param name="weight">The weight tensor (transposed) of shape [outputChannelCount, inputChannelCount].</param>
+    /// <param name="bias">The bias tensor of shape [outputChannelCount].</param>
+    /// <param name="batchSize">The size of the batch.</param>
+    /// <param name="tokenCount">The number of tokens.</param>
+    /// <param name="inputChannelCount">The number of input channels.</param>
+    /// <param name="outputChannelCount">The number of output channels.</param>
+    /// <param name="output">The output tensor of shape [batchSize, tokenCount, outputChannelCount].</param>
+    public unsafe static void MatMulForward(
+        // [batchSize, tokenCount, inputChannelCount], [outputChannelCount, inputChannelCount], [outputChannelCount]
+        float* input, float* weight, float* bias,
+        int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount,
+        // [batchSize, tokenCount, outputChannelCount]
+        float* output)
     {
-        // most of the running time is spent here and in matmul_backward
-        // OC is short for "output channels"
-        // input is (batchSize,tokenCount,channelCount), weight is (OC, channelCount), bias is (OC)
-        // output will be (batchSize,tokenCount,OC)
+        // Note that weight is transposed which is great since column vector is then a row vector
+        // output[B,T,:] = input [B,T,:] * weightT[:,:] + bias[:]
+
         //#pragma omp parallel for collapse(2)
         P.ForRanges(batchSize, tokenCount, (b, t) =>
         {
-            MatMulForwardAtBatchToken(output, input, weight, bias, tokenCount, inputChannelCount, outputChannelCount, b, t);
+            MatMulForwardAtBatchToken(output, input, weight, bias,
+                tokenCount, inputChannelCount, outputChannelCount, b, t);
         });
 
         // https://richardstartin.github.io/posts/mmm-revisited
@@ -296,10 +316,10 @@ public static partial class Llm
                     float result3 = (bias != null) ? bias[oc + 3] : 0.0f;
                     //var results = (bias != null) ? Vector128.Load(bias + oc) : Vector128<float>.Zero;
 
-                    float* wrow0 = weight + (oc + 0) * inputChannelCount;
-                    float* wrow1 = weight + (oc + 1) * inputChannelCount;
-                    float* wrow2 = weight + (oc + 2) * inputChannelCount;
-                    float* wrow3 = weight + (oc + 3) * inputChannelCount;
+                    float* weightRow0 = weight + (oc + 0) * inputChannelCount;
+                    float* weightRow1 = weight + (oc + 1) * inputChannelCount;
+                    float* weightRow2 = weight + (oc + 2) * inputChannelCount;
+                    float* weightRow3 = weight + (oc + 3) * inputChannelCount;
                     var sum0 = Vector<float>.Zero;
                     var sum1 = Vector<float>.Zero;
                     var sum2 = Vector<float>.Zero;
@@ -308,15 +328,15 @@ public static partial class Llm
                     for (; ic < (inputChannelCount - Vector<float>.Count); ic += Vector<float>.Count)
                     {
                         //var input_btic = Vector.Load(input_bt + ic).AsVector256();
-                        //sum0 = Fma.MultiplyAdd(input_btic, Vector256.Load(wrow0 + ic), sum0.AsVector256()).AsVector();
-                        //sum1 = Fma.MultiplyAdd(input_btic, Vector256.Load(wrow1 + ic), sum1.AsVector256()).AsVector();
-                        //sum2 = Fma.MultiplyAdd(input_btic, Vector256.Load(wrow2 + ic), sum2.AsVector256()).AsVector();
-                        //sum3 = Fma.MultiplyAdd(input_btic, Vector256.Load(wrow3 + ic), sum3.AsVector256()).AsVector();
+                        //sum0 = Fma.MultiplyAdd(input_btic, Vector256.Load(weightRow0 + ic), sum0.AsVector256()).AsVector();
+                        //sum1 = Fma.MultiplyAdd(input_btic, Vector256.Load(weightRow1 + ic), sum1.AsVector256()).AsVector();
+                        //sum2 = Fma.MultiplyAdd(input_btic, Vector256.Load(weightRow2 + ic), sum2.AsVector256()).AsVector();
+                        //sum3 = Fma.MultiplyAdd(input_btic, Vector256.Load(weightRow3 + ic), sum3.AsVector256()).AsVector();
                         var input_btic = Vector.Load(input_bt + ic);
-                        sum0 += input_btic * Vector.Load(wrow0 + ic);
-                        sum1 += input_btic * Vector.Load(wrow1 + ic);
-                        sum2 += input_btic * Vector.Load(wrow2 + ic);
-                        sum3 += input_btic * Vector.Load(wrow3 + ic);
+                        sum0 += input_btic * Vector.Load(weightRow0 + ic);
+                        sum1 += input_btic * Vector.Load(weightRow1 + ic);
+                        sum2 += input_btic * Vector.Load(weightRow2 + ic);
+                        sum3 += input_btic * Vector.Load(weightRow3 + ic);
                     }
 
                     result0 += Vector.Sum(sum0);
@@ -330,15 +350,15 @@ public static partial class Llm
                     {
                         var input_btic = input_bt[ic];
 
-                        //result0 = Single.FusedMultiplyAdd(input_btic, wrow0[ic], result0);
-                        //result1 = Single.FusedMultiplyAdd(input_btic, wrow1[ic], result1);
-                        //result2 = Single.FusedMultiplyAdd(input_btic, wrow2[ic], result2);
-                        //result3 = Single.FusedMultiplyAdd(input_btic, wrow3[ic], result3);
-                        result0 += input_btic * wrow0[ic];
-                        result1 += input_btic * wrow1[ic];
-                        result2 += input_btic * wrow2[ic];
-                        result3 += input_btic * wrow3[ic];
-                        //results += (Vector128.Create(wrow0[ic], wrow1[ic], wrow2[ic], wrow3[ic]) * input_btic);
+                        //result0 = Single.FusedMultiplyAdd(input_btic, weightRow0[ic], result0);
+                        //result1 = Single.FusedMultiplyAdd(input_btic, weightRow1[ic], result1);
+                        //result2 = Single.FusedMultiplyAdd(input_btic, weightRow2[ic], result2);
+                        //result3 = Single.FusedMultiplyAdd(input_btic, weightRow3[ic], result3);
+                        result0 += input_btic * weightRow0[ic];
+                        result1 += input_btic * weightRow1[ic];
+                        result2 += input_btic * weightRow2[ic];
+                        result3 += input_btic * weightRow3[ic];
+                        //results += (Vector128.Create(weightRow0[ic], weightRow1[ic], weightRow2[ic], weightRow3[ic]) * input_btic);
                     }
                     output_bt[oc + 0] = result0;
                     output_bt[oc + 1] = result1;
@@ -350,26 +370,26 @@ public static partial class Llm
             for (; oc < outputChannelCount; oc++)
             {
                 float result = (bias != null) ? bias[oc] : 0.0f;
-                float* wrow = weight + oc * inputChannelCount;
+                float* weightRow = weight + oc * inputChannelCount;
                 var sum = Vector<float>.Zero;
                 nint i = 0;
 
                 //var sum2 = Vector<float>.Zero;
                 //for (; i < (inputChannelCount - Vector<float>.Count * 2); i += Vector<float>.Count * 2)
                 //{
-                //    sum += Vector.Load(input_bt + i) * Vector.Load(wrow + i);
-                //    sum2 += Vector.Load(input_bt + i + Vector<float>.Count) * Vector.Load(wrow + i + Vector<float>.Count);
+                //    sum += Vector.Load(input_bt + i) * Vector.Load(weightRow + i);
+                //    sum2 += Vector.Load(input_bt + i + Vector<float>.Count) * Vector.Load(weightRow + i + Vector<float>.Count);
                 //}
                 //sum += sum2;
 
                 for (; i < (inputChannelCount - Vector<float>.Count); i += Vector<float>.Count)
                 {
-                    sum += Vector.Load(input_bt + i) * Vector.Load(wrow + i);
+                    sum += Vector.Load(input_bt + i) * Vector.Load(weightRow + i);
                 }
                 result += Vector.Sum(sum);
                 for (; i < inputChannelCount; i++)
                 {
-                    result += input_bt[i] * wrow[i];
+                    result += input_bt[i] * weightRow[i];
                 }
                 output_bt[oc] = result;
             }
@@ -401,7 +421,7 @@ public static partial class Llm
             float* δinput_bt = δinput + b * tokenCount * inputChannelCount + t * inputChannelCount;
             for (nint o = 0; o < outputChannelCount; o++)
             {
-                float* wrow = weight + o * inputChannelCount;
+                float* weightRow = weight + o * inputChannelCount;
                 float d = δoutput_bt[o];
                 var dVec = new Vector<float>(d);
                 nint i = 0;
@@ -409,12 +429,12 @@ public static partial class Llm
                 {
                     var δinput_bt_start = δinput_bt + i;
                     var δinput_bt_Vec = Vector.Load(δinput_bt_start);
-                    δinput_bt_Vec += Vector.Load(wrow + i) * dVec;
+                    δinput_bt_Vec += Vector.Load(weightRow + i) * dVec;
                     Vector.Store(δinput_bt_Vec, δinput_bt_start);
                 }
                 for (; i < inputChannelCount; i++)
                 {
-                    δinput_bt[i] += wrow[i] * d;
+                    δinput_bt[i] += weightRow[i] * d;
                 }
             }
         }
@@ -437,21 +457,21 @@ public static partial class Llm
                 {
                     float* δoutput_bt = δoutput + b * tokenCount * outputChannelCount + t * outputChannelCount;
                     float* input_bt = input + b * tokenCount * inputChannelCount + t * inputChannelCount;
-                    float* dwrow = δweight + o * inputChannelCount;
+                    float* dweightRow = δweight + o * inputChannelCount;
                     float d = δoutput_bt[o];
                     if (δbias != null) { δbias[o] += d; }
                     nint i = 0;
                     var dVec = new Vector<float>(d);
                     for (; i < (inputChannelCount - Vector<float>.Count); i += Vector<float>.Count)
                     {
-                        var dwstart = dwrow + i;
+                        var dwstart = dweightRow + i;
                         var dwVec = Vector.Load(dwstart);
                         dwVec += Vector.Load(input_bt + i) * dVec;
                         Vector.Store(dwVec, dwstart);
                     }
                     for (; i < inputChannelCount; i++)
                     {
-                        dwrow[i] += input_bt[i] * d;
+                        dweightRow[i] += input_bt[i] * d;
                     }
                 }
             }
