@@ -213,16 +213,17 @@ public static partial class Llm
             {
                 LayerNormBackwardAtBatchToken(
                     δoutput, input, weight, mean, invStdDev,
-                    tokenCount, channelCount, b, t,
-                    δweight, δbias, δinput);
+                    tokenCount, channelCount,
+                    δweight, δbias, δinput,
+                    b, t);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         static unsafe void LayerNormBackwardAtBatchToken(
             float* δoutput, float* input, float* weight, float* mean, float* invStdDev,
-            int tokenCount, int channelCount, int b, int t,
-            float* δweight, float* δbias, float* δinput)
+            int tokenCount, int channelCount, float* δweight, float* δbias,
+            float* δinput, int b, int t)
         {
             float* δoutput_bt = δoutput + b * tokenCount * channelCount + t * channelCount;
             float* input_bt = input + b * tokenCount * channelCount + t * channelCount;
@@ -396,60 +397,85 @@ public static partial class Llm
         }
     }
 
-    public unsafe static void MatMulBackward(float* δinput, float* δweight, float* δbias,
-                         float* δoutput, float* input, float* weight,
-                         int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount)
+    /// <summary>
+    /// Backward pass of matrix multiplication operation.
+    /// </summary>
+    /// <param name="δoutput">The gradient of the output tensor. Shape: [batchSize, tokenCount, outputChannelCount].</param>
+    /// <param name="input">The input tensor. Shape: [batchSize, tokenCount, inputChannelCount].</param>
+    /// <param name="weight">The weight tensor. Shape: [outputChannelCount, inputChannelCount].</param>
+    /// <param name="batchSize">The size of the batch.</param>
+    /// <param name="tokenCount">The number of tokens.</param>
+    /// <param name="inputChannelCount">The number of input channels.</param>
+    /// <param name="outputChannelCount">The number of output channels.</param>
+    /// <param name="δweight">The gradient of the weight tensor. Shape: [outputChannelCount, inputChannelCount].</param>
+    /// <param name="δbias">The gradient of the bias tensor. Shape: [outputChannelCount].</param>
+    /// <param name="δinput">The gradient of the input tensor. Shape: [batchSize, tokenCount, inputChannelCount].</param>
+    public unsafe static void MatMulBackward(
+        // [batchSize, tokenCount, outputChannelCount], [batchSize, tokenCount, inputChannelCount], [outputChannelCount, inputChannelCount]
+        float* δoutput, float* input, float* weight,
+        int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount,
+        // [outputChannelCount, inputChannelCount], [outputChannelCount], [batchSize, tokenCount, inputChannelCount]
+        float* δweight, float* δbias, float* δinput)
     {
-        // most of the running time is spent here and in matmul_forward
-        // this backward could be done in a single "round" of loops
-        // but that doesn't afford an efficient parallelization strategy
+        // backward could be done in a single "round" of loops but that doesn't
+        // afford an efficient parallelization strategy
 
-        // backward into input first, parallelize over batchSize,tokenCount
+        // backward into input first, parallelize over [batchSize,tokenCount]
         //#pragma omp parallel for collapse(2)
         P.ForRanges(batchSize, tokenCount, (b, t) =>
         {
-            MatMulBackwardForInputAtBatchToken(δinput, δoutput, weight, tokenCount, inputChannelCount, outputChannelCount, b, t);
+            MatMulBackwardForInputAtBatchToken(δoutput, weight,
+                tokenCount, inputChannelCount, outputChannelCount,
+                δinput,
+                b, t);
         });
         //}
+
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         static unsafe void MatMulBackwardForInputAtBatchToken(
-            float* δinput, float* δoutput, float* weight,
+            float* δoutput, float* weight,
             nint tokenCount, nint inputChannelCount, nint outputChannelCount,
+            float* δinput,
             nint b, nint t)
         {
             float* δoutput_bt = δoutput + b * tokenCount * outputChannelCount + t * outputChannelCount;
             float* δinput_bt = δinput + b * tokenCount * inputChannelCount + t * inputChannelCount;
-            for (nint o = 0; o < outputChannelCount; o++)
+            for (nint oc = 0; oc < outputChannelCount; oc++)
             {
-                float* weightRow = weight + o * inputChannelCount;
-                float d = δoutput_bt[o];
-                var dVec = new Vector<float>(d);
-                nint i = 0;
-                for (; i < (inputChannelCount - Vector<float>.Count); i += Vector<float>.Count)
+                float* weightRow = weight + oc * inputChannelCount;
+                float δoutput_btoc = δoutput_bt[oc];
+                var δoutputVector_btoc = new Vector<float>(δoutput_btoc);
+                nint ic = 0;
+                for (; ic < (inputChannelCount - Vector<float>.Count); ic += Vector<float>.Count)
                 {
-                    var δinput_bt_start = δinput_bt + i;
-                    var δinput_bt_Vec = Vector.Load(δinput_bt_start);
-                    δinput_bt_Vec += Vector.Load(weightRow + i) * dVec;
-                    Vector.Store(δinput_bt_Vec, δinput_bt_start);
+                    var δinput_btic = δinput_bt + ic;
+                    var δinputVector_btic = Vector.Load(δinput_btic);
+                    δinputVector_btic += Vector.Load(weightRow + ic) * δoutputVector_btoc;
+                    Vector.Store(δinputVector_btic, δinput_btic);
                 }
-                for (; i < inputChannelCount; i++)
+                for (; ic < inputChannelCount; ic++)
                 {
-                    δinput_bt[i] += weightRow[i] * d;
+                    δinput_bt[ic] += weightRow[ic] * δoutput_btoc;
                 }
             }
         }
 
-        // backward into weight/bias, parallelize over output channels OC
+        // backward into weight/bias, parallelize over output channels
         //#pragma omp parallel for
-        P.For(0, outputChannelCount, o =>
+        P.For(0, outputChannelCount, oc =>
         {
-            MatMulBackwardParametersAtOutputChannel(δweight, δbias, δoutput, input, batchSize, tokenCount, inputChannelCount, outputChannelCount, o);
+            MatMulBackwardForWeightBiasAtOutputChannel(
+                δoutput, input,
+                batchSize, tokenCount, inputChannelCount, outputChannelCount,
+                δweight, δbias,
+                oc);
         });
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        static unsafe void MatMulBackwardParametersAtOutputChannel(
-            float* δweight, float* δbias, float* δoutput, float* input,
+        static unsafe void MatMulBackwardForWeightBiasAtOutputChannel(
+            float* δoutput, float* input,
             nint batchSize, nint tokenCount, nint inputChannelCount, nint outputChannelCount,
-            nint o)
+            float* δweight, float* δbias,
+            nint oc)
         {
             for (nint b = 0; b < batchSize; b++)
             {
@@ -457,21 +483,21 @@ public static partial class Llm
                 {
                     float* δoutput_bt = δoutput + b * tokenCount * outputChannelCount + t * outputChannelCount;
                     float* input_bt = input + b * tokenCount * inputChannelCount + t * inputChannelCount;
-                    float* dweightRow = δweight + o * inputChannelCount;
-                    float d = δoutput_bt[o];
-                    if (δbias != null) { δbias[o] += d; }
-                    nint i = 0;
-                    var dVec = new Vector<float>(d);
-                    for (; i < (inputChannelCount - Vector<float>.Count); i += Vector<float>.Count)
+                    float* δweightRow = δweight + oc * inputChannelCount;
+                    float δoutput_btoc = δoutput_bt[oc];
+                    if (δbias != null) { δbias[oc] += δoutput_btoc; }
+                    nint ic = 0;
+                    var δoutputVector_btoc = new Vector<float>(δoutput_btoc);
+                    for (; ic < (inputChannelCount - Vector<float>.Count); ic += Vector<float>.Count)
                     {
-                        var dwstart = dweightRow + i;
-                        var dwVec = Vector.Load(dwstart);
-                        dwVec += Vector.Load(input_bt + i) * dVec;
-                        Vector.Store(dwVec, dwstart);
+                        var δweightPtr = δweightRow + ic;
+                        var δweightVector = Vector.Load(δweightPtr);
+                        δweightVector += Vector.Load(input_bt + ic) * δoutputVector_btoc;
+                        Vector.Store(δweightVector, δweightPtr);
                     }
-                    for (; i < inputChannelCount; i++)
+                    for (; ic < inputChannelCount; ic++)
                     {
-                        dweightRow[i] += input_bt[i] * d;
+                        δweightRow[ic] += input_bt[ic] * δoutput_btoc;
                     }
                 }
             }
