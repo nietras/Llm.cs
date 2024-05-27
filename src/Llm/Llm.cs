@@ -99,7 +99,7 @@ public static partial class Llm
     }
 
     /// <summary>
-    /// Forward pass of LayerNorm layer.
+    /// Forward pass of Layer Normalization.
     /// </summary>
     /// <param name="input">The input tensor of shape [batchSize, tokenCount, channelCount].</param>
     /// <param name="weight">The weight tensor of shape [channelCount].</param>
@@ -184,9 +184,27 @@ public static partial class Llm
         }
     }
 
+    /// <summary>
+    /// Backward pass of Layer Normalization.
+    /// </summary>
+    /// <param name="δoutput">The gradients of the output tensor. Shape: [batchSize, tokenCount, channelCount].</param>
+    /// <param name="input">The input tensor. Shape: [batchSize, tokenCount, channelCount].</param>
+    /// <param name="weight">The weight tensor. Shape: [channelCount].</param>
+    /// <param name="mean">The mean tensor. Shape: [batchSize, tokenCount].</param>
+    /// <param name="invStdDev">The inverse standard deviation tensor. Shape: [batchSize, tokenCount].</param>
+    /// <param name="batchSize">The size of the batch.</param>
+    /// <param name="tokenCount">The number of tokens.</param>
+    /// <param name="channelCount">The number of channels.</param>
+    /// <param name="δweight">The gradients of the weight tensor. Shape: [channelCount].</param>
+    /// <param name="δbias">The gradients of the bias tensor. Shape: [channelCount].</param>
+    /// <param name="δinput">The gradients of the input tensor. Shape: [batchSize, tokenCount, channelCount].</param>
     public unsafe static void LayerNormBackward(
-        float* δoutput, float* input, float* weight, float* mean, float* invStdDev,
+        // [batchSize, tokenCount, channelCount], [batchSize, tokenCount, channelCount], [channelCount]
+        float* δoutput, float* input, float* weight,
+        // [batchSize, tokenCount], [batchSize, tokenCount]
+        float* mean, float* invStdDev,
         int batchSize, int tokenCount, int channelCount,
+        // [channelCount], [channelCount], [batchSize, tokenCount, channelCount]
         float* δweight, float* δbias, float* δinput)
     {
         for (int b = 0; b < batchSize; b++)
@@ -214,30 +232,29 @@ public static partial class Llm
             float* δinput_bt = δinput + b * tokenCount * channelCount + t * channelCount;
 
             // first: two reduce operations
-            float dnorm_mean = 0.0f;
-            float dnorm_norm_mean = 0.0f;
+            float δnormMean = 0.0f;
+            float δnormNormMean = 0.0f;
             for (int c = 0; c < channelCount; c++)
             {
+                float δnorm_c = weight[c] * δoutput_bt[c];
+                δnormMean += δnorm_c;
                 float norm_btc = (input_bt[c] - mean_bt) * invStdDev_bt;
-                float dnorm_c = weight[c] * δoutput_bt[c];
-                dnorm_mean += dnorm_c;
-                dnorm_norm_mean += dnorm_c * norm_btc;
+                δnormNormMean += δnorm_c * norm_btc;
             }
-            dnorm_mean /= channelCount;
-            dnorm_norm_mean /= channelCount;
+            δnormMean /= channelCount;
+            δnormNormMean /= channelCount;
 
             // now iterate again and accumulate all the gradients
             for (int c = 0; c < channelCount; c++)
             {
                 float norm_btc = (input_bt[c] - mean_bt) * invStdDev_bt;
-                float dnorm_c = weight[c] * δoutput_bt[c];
+                float δnorm_c = weight[c] * δoutput_bt[c];
                 // gradient contribution to bias
                 δbias[c] += δoutput_bt[c];
                 // gradient contribution to weight
                 δweight[c] += norm_btc * δoutput_bt[c];
-                // gradient contribution to input
-                float δ = (dnorm_c - dnorm_mean - norm_btc * dnorm_norm_mean)
-                    * invStdDev_bt; // final scale
+                // gradient contribution to input (term (1, 2, 3) * final scale
+                float δ = (δnorm_c - δnormMean - norm_btc * δnormNormMean) * invStdDev_bt;
                 δinput_bt[c] += δ;
             }
         }
@@ -571,7 +588,7 @@ public static partial class Llm
         //    }
         //}
         // Cannot simply parallize like this since some derivatives are "shared"
-        // like δinput (derivative of input which is output from this method )
+        // like δinput (derivative of input which is output from this method)
         //P.ForRanges(batchSize, tokenCount, headCount, (b, t, h) =>
         //{
         //    AttentionBackwardAtBatchTokenHead(δinput, dpreatt, datt, δoutput, input, att, tokenCount, channelCount, headCount, C3, headSize, scale, b, t, h);
