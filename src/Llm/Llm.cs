@@ -123,44 +123,64 @@ public static partial class Llm
         // at each position (b,t) of the input, the channelCount-dimensional vector
         // of activations gets normalized, then scaled and shifted
         const float eps = 1e-5f;
-        for (int b = 0; b < batchSize; b++)
+        P.ForRanges(batchSize, tokenCount, (b, t) =>
         {
+            float* input_b = input + b * tokenCount * channelCount;
             float* mean_b = mean + b * tokenCount;
             float* invStdDev_b = invStdDev + b * tokenCount;
             float* output_b = output + b * tokenCount * channelCount;
-            for (int t = 0; t < tokenCount; t++)
+            LayerNormForwardAtBatchToken(input_b, weight, bias,
+                channelCount, t, eps,
+                mean_b, invStdDev_b, output_b);
+        });
+        //for (int b = 0; b < batchSize; b++)
+        //{
+        //    float* input_b = input + b * tokenCount * channelCount;
+        //    float* mean_b = mean + b * tokenCount;
+        //    float* invStdDev_b = invStdDev + b * tokenCount;
+        //    float* output_b = output + b * tokenCount * channelCount;
+        //    for (int t = 0; t < tokenCount; t++)
+        //    {
+        //        LayerNormForwardAtBatchToken(input_b, weight, bias,
+        //            channelCount, t, eps,
+        //            mean_b, invStdDev_b, output_b);
+        //    }
+        //}
+
+        static unsafe void LayerNormForwardAtBatchToken(
+            float* input_b, float* weight, float* bias, int channelCount,
+            int t, float eps, float* mean_b, float* invStdDev_b, float* output_b)
+        {
+            // seek to the input position input[b,t,:]
+            float* x = input_b + t * channelCount;
+            // calculate the mean
+            float m = 0.0f;
+            for (int c = 0; c < channelCount; c++)
             {
-                // seek to the input position input[b,t,:]
-                float* x = input + b * tokenCount * channelCount + t * channelCount;
-                // calculate the mean
-                float m = 0.0f;
-                for (int c = 0; c < channelCount; c++)
-                {
-                    m += x[c];
-                }
-                m /= channelCount;
-                // calculate the variance (without any bias correction)
-                float v = 0.0f;
-                for (int i = 0; i < channelCount; i++)
-                {
-                    float xMinusMean = x[i] - m;
-                    v += xMinusMean * xMinusMean;
-                }
-                v /= channelCount;
-                // calculate the invStdDev (reciprocal standard deviation)
-                float s = 1.0f / MathF.Sqrt(v + eps);
-                // seek to the output position in output[b,t,:]
-                float* output_bt = output_b + t * channelCount;
-                for (int c = 0; c < channelCount; c++)
-                {
-                    float n = (s * (x[c] - m)); // normalize
-                    float o = n * weight[c] + bias[c]; // scale and shift
-                    output_bt[c] = o; // write
-                }
-                // cache the mean and invStdDev for the backward pass later
-                mean_b[t] = m;
-                invStdDev_b[t] = s;
+                m += x[c];
             }
+            m /= channelCount;
+            // calculate the variance (without any bias correction)
+            float v = 0.0f;
+            for (int i = 0; i < channelCount; i++)
+            {
+                float xMinusMean = x[i] - m;
+                v += xMinusMean * xMinusMean;
+            }
+            v /= channelCount;
+            // calculate the invStdDev (reciprocal standard deviation)
+            float s = 1.0f / MathF.Sqrt(v + eps);
+            // seek to the output position in output[b,t,:]
+            float* output_bt = output_b + t * channelCount;
+            for (int c = 0; c < channelCount; c++)
+            {
+                float n = (s * (x[c] - m)); // normalize
+                float o = n * weight[c] + bias[c]; // scale and shift
+                output_bt[c] = o; // write
+            }
+            // cache the mean and invStdDev for the backward pass later
+            mean_b[t] = m;
+            invStdDev_b[t] = s;
         }
     }
 
@@ -673,7 +693,7 @@ public static partial class Llm
         P.For(0, count, i =>
         {
             float x = input[i];
-            var local_grad = δGeLU(x);
+            var local_grad = GeLUGrad(x);
             δinput[i] += local_grad * δoutput[i];
         });
         //for (int i = 0; i < count; i++)
@@ -684,7 +704,7 @@ public static partial class Llm
         //}
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static unsafe float δGeLU(float x)
+        static unsafe float GeLUGrad(float x)
         {
             float cube = 0.044715f * x * x * x;
             float tanh_arg = GELU_SCALING_FACTOR * (x + cube);
