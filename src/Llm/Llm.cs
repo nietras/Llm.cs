@@ -588,12 +588,19 @@ public static partial class Llm
     public unsafe static void GeLUForward(float* output, float* input, int count)
     {
         // (approximate) GeLU elementwise non-linearity in the MLP block of Transformer
-        for (int i = 0; i < count; i++)
+        // TODO: Chunk!
+        P.For(0, count, i =>
         {
             float x = input[i];
             float cube = 0.044715f * x * x * x;
             output[i] = 0.5f * x * (1.0f + MathF.Tanh(GELU_SCALING_FACTOR * (x + cube)));
-        }
+        });
+        //for (int i = 0; i < count; i++)
+        //{
+        //    float x = input[i];
+        //    float cube = 0.044715f * x * x * x;
+        //    output[i] = 0.5f * x * (1.0f + MathF.Tanh(GELU_SCALING_FACTOR * (x + cube)));
+        //}
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
