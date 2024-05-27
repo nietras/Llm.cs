@@ -237,6 +237,8 @@ public static partial class Llm
             MatMulForwardAtBatchToken(output, input, weight, bias, tokenCount, inputChannelCount, outputChannelCount, b, t);
         });
 
+        // https://richardstartin.github.io/posts/mmm-revisited
+
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         static unsafe void MatMulForwardAtBatchToken(
             float* output, float* input, float* weight, float* bias,
