@@ -504,15 +504,16 @@ public partial class Llm : ILlm
         }
     }
 
-    public unsafe static void AttentionForward(float* input, int batchSize, int tokenCount,
-                           int channelCount,
-                           int headCount, float* preatt, float* att, float* output)
+    public unsafe static void AttentionForward(
+        float* input,
+        int batchSize, int tokenCount, int channelCount, int headCount,
+        float* preatt, float* att, float* output)
     {
-        // input is (batchSize, tokenCount, 3C) holding the query, key, value (Q, K, vocabularySize) vectors
+        // input is (batchSize, tokenCount, 3C) holding the query, key, value (Q, K, V) vectors
         // preatt, att are (batchSize, headCount, tokenCount, tokenCount). headCount = number of heads, tokenCount = sequence length
         // that holds the pre-attention and post-attention scores (used in backward)
         // output is (batchSize, tokenCount, channelCount)
-        // attention is the only layer that mixes information across time
+        // attention is the only layer that mixes information across time/token sequence
         // every other operation is applied at every (b,t) position independently
         // (and of course, no layer mixes information across batch)
         int C3 = channelCount * 3;
@@ -539,13 +540,22 @@ public partial class Llm : ILlm
         //#pragma omp parallel for collapse(3)
         P.ForRanges(batchSize, tokenCount, headCount, (b, t, h) =>
         {
-            AttentionForwardAtBatchTokenHead(output, preatt, att, input, tokenCount, channelCount, headCount, b, t, h, C3, headSize, scale);
+            AttentionForwardAtBatchTokenHead(input,
+                tokenCount, channelCount, headCount,
+                preatt, att, output, b, t, h);
         });
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        static unsafe void AttentionForwardAtBatchTokenHead(float* output, float* preatt, float* att, float* input,
-            int tokenCount, int channelCount, int headCount, int b, int t, int h, int C3, int headSize, float scale)
+        static unsafe void AttentionForwardAtBatchTokenHead(float* input,
+            int tokenCount, int channelCount, int headCount,
+            float* preatt, float* att, float* output,
+            int b, int t, int h)
         {
+            int C3 = channelCount * 3;
+            int headSize = channelCount / headCount; // head size
+            Debug.Assert(channelCount == (headSize * headCount));
+            float scale = 1.0f / MathF.Sqrt(headSize);
+
             float* query_t = input + b * tokenCount * C3 + t * C3 + h * headSize;
             float* preatt_bth = preatt + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
             float* att_bth = att + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
@@ -563,10 +573,7 @@ public partial class Llm : ILlm
                     val += query_t[i] * key_t2[i];
                 }
                 val *= scale;
-                if (val > maxval)
-                {
-                    maxval = val;
-                }
+                maxval = MathF.Max(maxval, val);
 
                 preatt_bth[t2] = val;
             }
@@ -817,7 +824,7 @@ public partial class Llm : ILlm
             float max = float.MinValue;
             for (int i = 0; i < vocabularySize; i++)
             {
-                max = Math.Max(max, logits_bt[i]);
+                max = MathF.Max(max, logits_bt[i]);
             }
             float sum = 0.0f;
             for (int i = 0; i < vocabularySize; i++)
