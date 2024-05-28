@@ -750,7 +750,9 @@ public partial class Llm : ILlm
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public unsafe static void GeLUBackward(float* δoutput, float* input, int count, float* δinput)
+    public unsafe static void GeLUBackward(
+        float* δoutput, float* input,
+        int count, float* δinput)
     {
         // TODO: Chunk!
         P.For(0, count, i =>
@@ -779,24 +781,27 @@ public partial class Llm : ILlm
         }
     }
 
-    public unsafe static void ResidualForward(float* input1, float* input2, int count, float* output)
+    public unsafe static void ResidualForward(
+        float* left, float* right, int count, float* output)
     {
         for (int i = 0; i < count; i++)
         {
-            output[i] = input1[i] + input2[i];
+            output[i] = left[i] + right[i];
         }
     }
 
-    public unsafe static void ResidualBackward(float* δoutput, int count, float* dinput1, float* dinput2)
+    public unsafe static void ResidualBackward(
+        float* δoutput, int count, float* δleft, float* δright)
     {
         for (int i = 0; i < count; i++)
         {
-            dinput1[i] += δoutput[i];
-            dinput2[i] += δoutput[i];
+            δleft[i] += δoutput[i];
+            δright[i] += δoutput[i];
         }
     }
 
-    public unsafe static void SoftmaxForward(float* logits, int batchSize, int tokenCount, int vocabularySize, float* probs)
+    public unsafe static void SoftmaxForward(float* logits,
+        int batchSize, int tokenCount, int vocabularySize, float* probs)
     {
         // output: probs are (batchSize,tokenCount,vocabularySize) of the probabilities (sums to 1.0 in each b,t position)
         // input: logits is (batchSize,tokenCount,vocabularySize) of the unnormalized log probabilities
@@ -830,9 +835,10 @@ public partial class Llm : ILlm
         });
     }
 
-    public unsafe static void CrossEntropyForward(float* probs,
-                              int* targets, int batchSize,
-                              int tokenCount, int vocabularySize, float* losses)
+    public unsafe static void CrossEntropyForward(
+        float* probs, int* targets,
+        int batchSize, int tokenCount, int vocabularySize,
+        float* losses)
     {
         // output: losses is (batchSize,tokenCount) of the individual losses at each position
         // input: probs are (batchSize,tokenCount,vocabularySize) of the probabilities
@@ -849,18 +855,19 @@ public partial class Llm : ILlm
         }
     }
 
-    public unsafe static void CrossEntropySoftmaxBackward(float* probs,
-                               int* targets, int batchSize, int tokenCount,
-                               int vocabularySize, float* dlogits, float* dlosses)
+    public unsafe static void CrossEntropySoftmaxBackward(
+        float* δlosses, float* probs, int* targets,
+        int batchSize, int tokenCount, int vocabularySize,
+        float* δlogits)
     {
         // backwards through both softmax and crossentropy
         for (int b = 0; b < batchSize; b++)
         {
             for (int t = 0; t < tokenCount; t++)
             {
-                float* dlogits_bt = dlogits + b * tokenCount * vocabularySize + t * vocabularySize;
+                float* dlogits_bt = δlogits + b * tokenCount * vocabularySize + t * vocabularySize;
                 float* probs_bt = probs + b * tokenCount * vocabularySize + t * vocabularySize;
-                float dloss = dlosses[b * tokenCount + t];
+                float dloss = δlosses[b * tokenCount + t];
                 int ix = targets[b * tokenCount + t];
                 for (int i = 0; i < vocabularySize; i++)
                 {

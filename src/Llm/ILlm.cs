@@ -40,14 +40,16 @@ public interface ILlm
     static abstract unsafe void GeLUForward(float* input, int count, float* output);
     static abstract unsafe void GeLUBackward(float* δoutput, float* input, int count, float* δinput);
 
-    static abstract unsafe void ResidualForward(float* input1, float* input2, int count, float* output);
-    static abstract unsafe void ResidualBackward(float* δoutput, int count, float* dinput1, float* dinput2);
+    static abstract unsafe void ResidualForward(float* left, float* right, int count, float* output);
+    static abstract unsafe void ResidualBackward(float* δoutput, int count, float* δleft, float* δright);
 
-    static abstract unsafe void SoftmaxForward(float* logits, int batchSize, int tokenCount, int vocabularySize, float* probs);
+    static abstract unsafe void SoftmaxForward(float* logits,
+        int batchSize, int tokenCount, int vocabularySize,
+        float* probs);
     static abstract unsafe void CrossEntropyForward(float* probs, int* targets,
         int batchSize, int tokenCount, int vocabularySize,
         float* losses);
-    static abstract unsafe void CrossEntropySoftmaxBackward(float* probs, int* targets,
-        int batchSize, int tokenCount, int vocabularySize,
-        float* dlogits, float* dlosses);
+    static abstract unsafe void CrossEntropySoftmaxBackward(float* dlosses, float* probs,
+        int* targets, int batchSize, int tokenCount,
+        int vocabularySize, float* dlogits);
 }

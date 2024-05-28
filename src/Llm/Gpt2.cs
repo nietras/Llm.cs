@@ -451,7 +451,7 @@ internal static partial class Gpt2
         float dloss_mean = 1.0f / (B * T);
         for (int i = 0; i < B * T; i++) { grads_acts.losses[i] = dloss_mean; }
 
-        CrossEntropySoftmaxBackward(acts.probs, model->targets, B, T, V, grads_acts.logits, grads_acts.losses);
+        CrossEntropySoftmaxBackward(grads_acts.losses, acts.probs, model->targets, B, T, V, grads_acts.logits);
         MatMulBackward(grads_acts.logits, acts.lnf, parameters.wte, B, T, C, V, grads.wte, null, grads_acts.lnf);
         float* residual = acts.residual3 + (L - 1) * B * T * C; // last layer's residual
         float* dresidual = grads_acts.residual3 + (L - 1) * B * T * C; // write to last layer's residual
