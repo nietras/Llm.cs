@@ -814,18 +814,15 @@ public partial class Llm : ILlm
             float* probs_bt = probs + b * tokenCount * vocabularySize + t * vocabularySize;
 
             // maxval is only calculated and subtracted for numerical stability
-            float maxval = float.MinValue;
+            float max = float.MinValue;
             for (int i = 0; i < vocabularySize; i++)
             {
-                if (logits_bt[i] > maxval)
-                {
-                    maxval = logits_bt[i];
-                }
+                max = Math.Max(max, logits_bt[i]);
             }
             float sum = 0.0f;
             for (int i = 0; i < vocabularySize; i++)
             {
-                probs_bt[i] = MathF.Exp(logits_bt[i] - maxval);
+                probs_bt[i] = MathF.Exp(logits_bt[i] - max);
                 sum += probs_bt[i];
             }
             for (int i = 0; i < vocabularySize; i++)
