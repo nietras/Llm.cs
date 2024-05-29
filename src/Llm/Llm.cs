@@ -505,18 +505,21 @@ public partial class Llm : ILlm
     }
 
     public unsafe static void AttentionForward(
+        // [batchSize, tokenCount, 3 * channelCount (query Q, key K, value V)]
         float* input,
         int batchSize, int tokenCount, int channelCount, int headCount,
-        float* preatt, float* att, float* output)
+        // [batchSize, headCount, tokenCount, tokenCount], [batchSize, headCount, tokenCount, tokenCount], [batchSize, tokenCount, channelCount]
+        float* preAttention, float* postAttention, float* output)
     {
         // input is (batchSize, tokenCount, 3C) holding the query, key, value (Q, K, V) vectors
-        // preatt, att are (batchSize, headCount, tokenCount, tokenCount). headCount = number of heads, tokenCount = sequence length
+        // preatt, att are (batchSize, headCount, tokenCount, tokenCount).
+        // headCount = number of heads, tokenCount = sequence length
         // that holds the pre-attention and post-attention scores (used in backward)
         // output is (batchSize, tokenCount, channelCount)
         // attention is the only layer that mixes information across time/token sequence
         // every other operation is applied at every (b,t) position independently
         // (and of course, no layer mixes information across batch)
-        int C3 = channelCount * 3;
+        int qkvChannelCount = channelCount * 3;
         int headSize = channelCount / headCount; // head size
         Debug.Assert(channelCount == (headSize * headCount));
         float scale = 1.0f / MathF.Sqrt(headSize);
@@ -542,40 +545,40 @@ public partial class Llm : ILlm
         {
             AttentionForwardAtBatchTokenHead(input,
                 tokenCount, channelCount, headCount,
-                preatt, att, output, b, t, h);
+                preAttention, postAttention, output,
+                b, t, h);
         });
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         static unsafe void AttentionForwardAtBatchTokenHead(float* input,
             int tokenCount, int channelCount, int headCount,
-            float* preatt, float* att, float* output,
+            float* preAttention, float* postAttention, float* output,
             int b, int t, int h)
         {
-            int C3 = channelCount * 3;
+            int qkvChannelCount = channelCount * 3;
             int headSize = channelCount / headCount; // head size
             Debug.Assert(channelCount == (headSize * headCount));
             float scale = 1.0f / MathF.Sqrt(headSize);
 
-            float* query_t = input + b * tokenCount * C3 + t * C3 + h * headSize;
-            float* preatt_bth = preatt + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
-            float* att_bth = att + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
+            float* query_t = input + b * tokenCount * qkvChannelCount + t * qkvChannelCount + h * headSize;
+            float* preAtt_bth = preAttention + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
+            float* postAtt_bth = postAttention + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
 
             // pass 1: calculate query dot key and maxval
-            float maxval = float.MinValue;
+            float max = float.MinValue;
             for (int t2 = 0; t2 <= t; t2++) // note: includes t == tokenCount
             {
-                float* key_t2 = input + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount; // +channelCount because it's key
+                float* key_t2 = input + b * tokenCount * qkvChannelCount + t2 * qkvChannelCount + h * headSize + channelCount; // +channelCount because it's key
 
                 // (query_t) dot (key_t2)
-                float val = 0.0f;
+                float dot = 0.0f;
                 for (int i = 0; i < headSize; i++)
                 {
-                    val += query_t[i] * key_t2[i];
+                    dot += query_t[i] * key_t2[i];
                 }
-                val *= scale;
-                maxval = MathF.Max(maxval, val);
-
-                preatt_bth[t2] = val;
+                dot *= scale;
+                max = MathF.Max(max, dot);
+                preAtt_bth[t2] = dot;
             }
 
             // pass 2: calculate the exp and keep track of sum
@@ -583,9 +586,9 @@ public partial class Llm : ILlm
             float expsum = 0.0f;
             for (int t2 = 0; t2 <= t; t2++)
             {
-                float expv = MathF.Exp(preatt_bth[t2] - maxval);
+                float expv = MathF.Exp(preAtt_bth[t2] - max);
                 expsum += expv;
-                att_bth[t2] = expv;
+                postAtt_bth[t2] = expv;
             }
             float expsum_inv = expsum == 0.0f ? 0.0f : 1.0f / expsum;
 
@@ -594,13 +597,13 @@ public partial class Llm : ILlm
             {
                 if (t2 <= t)
                 {
-                    att_bth[t2] *= expsum_inv;
+                    postAtt_bth[t2] *= expsum_inv;
                 }
                 else
                 {
                     // causal attention mask. not strictly necessary to set to zero here
                     // only doing this explicitly for debugging and checking to PyTorch
-                    att_bth[t2] = 0.0f;
+                    postAtt_bth[t2] = 0.0f;
                 }
             }
 
@@ -609,8 +612,8 @@ public partial class Llm : ILlm
             for (int i = 0; i < headSize; i++) { output_bth[i] = 0.0f; }
             for (int t2 = 0; t2 <= t; t2++)
             {
-                float* value_t2 = input + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount * 2; // +channelCount*2 because it's value
-                float att_btht2 = att_bth[t2];
+                float* value_t2 = input + b * tokenCount * qkvChannelCount + t2 * qkvChannelCount + h * headSize + channelCount * 2; // +channelCount*2 because it's value
+                float att_btht2 = postAtt_bth[t2];
                 for (int i = 0; i < headSize; i++)
                 {
                     output_bth[i] += att_btht2 * value_t2[i];
