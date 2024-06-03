@@ -136,7 +136,7 @@ static class NotParallel
     }
 }
 
-public class FixedThreadCountTaskScheduler : TaskScheduler
+internal class FixedThreadCountTaskScheduler : TaskScheduler
 {
     readonly int _threadCount;
     readonly ConcurrentQueue<Task> _taskQueue = new();

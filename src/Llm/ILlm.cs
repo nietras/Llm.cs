@@ -45,11 +45,13 @@ public interface ILlm
 
     static abstract unsafe void SoftmaxForward(float* logits,
         int batchSize, int tokenCount, int vocabularySize,
-        float* probs);
-    static abstract unsafe void CrossEntropyForward(float* probs, int* targets,
+        float* probabilities);
+    static abstract unsafe void CrossEntropyForward(
+        float* probabilities, int* targetTokenIndices,
         int batchSize, int tokenCount, int vocabularySize,
         float* losses);
-    static abstract unsafe void CrossEntropySoftmaxBackward(float* dlosses, float* probs,
-        int* targets, int batchSize, int tokenCount,
-        int vocabularySize, float* dlogits);
+    static abstract unsafe void CrossEntropySoftmaxBackward(
+        float* δlosses, float* probabilities, int* targetTokenIndices,
+        int batchSize, int tokenCount, int vocabularySize,
+        float* δlogits);
 }

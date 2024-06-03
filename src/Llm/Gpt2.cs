@@ -102,7 +102,7 @@ internal static partial class Gpt2
         public float* lnf_mean; // (B, T)
         public float* lnf_rstd; // (B, T)
         public float* logits; // (B, T, V)
-        public float* probs; // (B, T, V)
+        public float* probabilities; // (B, T, V)
         public float* losses; // (B, T)
     }
 
@@ -136,7 +136,7 @@ internal static partial class Gpt2
             &acts->lnf_mean,
             &acts->lnf_rstd,
             &acts->logits,
-            &acts->probs,
+            &acts->probabilities,
             &acts->losses
     ];
         float* acts_memory_iterator = acts_memory;
@@ -183,8 +183,8 @@ internal static partial class Gpt2
         public int batch_size; // the batch size (B) of current forward pass
         public int seq_len; // the sequence length (T) of current forward pass
         public int* inputs; // the input tokens for the current forward pass
-        public int* targets; // the target tokens for the current forward pass
-        public float mean_loss; // after a forward pass with targets, will be populated with the mean loss
+        public int* targetTokenIndices; // the target tokens for the current forward pass
+        public float mean_loss; // after a forward pass with targetTokenIndices, will be populated with the mean loss
     }
 
     public unsafe static void BuildFromCheckpoint(GPT2* model, string checkpoint_path)
@@ -250,15 +250,15 @@ internal static partial class Gpt2
         model->v_memory = null;
         model->grads_acts_memory = null;
         model->inputs = null;
-        model->targets = null;
+        model->targetTokenIndices = null;
         model->batch_size = 0;
         model->seq_len = 0;
         model->mean_loss = -1.0f; // -1.0f will designate no loss
     }
 
-    static unsafe void Forward(GPT2* model, int* inputs, int* targets, int B, int T)
+    static unsafe void Forward(GPT2* model, int* inputs, int* targetTokenIndices, int B, int T)
     {
-        // targets are optional and could be null
+        // targetTokenIndices are optional and could be null
 
         // ensure the model was initialized or error output
         if (model->params_memory == null)
@@ -300,7 +300,7 @@ internal static partial class Gpt2
             model->act_sizes[18] = B * T; // lnf_mean
             model->act_sizes[19] = B * T; // lnf_rstd
             model->act_sizes[20] = B * T * V; // logits
-            model->act_sizes[21] = B * T * V; // probs
+            model->act_sizes[21] = B * T * V; // probabilities
             model->act_sizes[22] = B * T; // losses
             long num_activations = 0;
             for (long i = 0; i < NUM_ACTIVATION_TENSORS; i++)
@@ -310,9 +310,9 @@ internal static partial class Gpt2
             Log($"num_activations: {num_activations}");
             model->num_activations = num_activations;
             model->acts_memory = AllocateAndPointActivations(&model->acts, model->act_sizes);
-            // also create memory for caching inputs and targets
+            // also create memory for caching inputs and targetTokenIndices
             model->inputs = malloc<int>(B * T);
-            model->targets = malloc<int>(B * T); // might be unused if we never have targets but it's small
+            model->targetTokenIndices = malloc<int>(B * T); // might be unused if we never have targetTokenIndices but it's small
         }
         else
         {
@@ -325,11 +325,11 @@ internal static partial class Gpt2
             }
         }
 
-        // cache the inputs/targets
+        // cache the inputs/targetTokenIndices
         memcpy(model->inputs, inputs, B * T);
-        if (targets != null)
+        if (targetTokenIndices != null)
         {
-            memcpy(model->targets, targets, B * T);
+            memcpy(model->targetTokenIndices, targetTokenIndices, B * T);
         }
 
         // forward pass
@@ -389,12 +389,12 @@ internal static partial class Gpt2
         residual = acts.residual3 + (L - 1) * B * T * C; // last residual is in residual3
         LayerNormForward(residual, parameters.lnfw, parameters.lnfb, B, T, C, acts.lnf_mean, acts.lnf_rstd, acts.lnf);
         MatMulForward(acts.lnf, parameters.wte, null, B, T, C, V, acts.logits);
-        SoftmaxForward(acts.logits, B, T, V, acts.probs);
+        SoftmaxForward(acts.logits, B, T, V, acts.probabilities);
 
-        // also forward the cross-entropy loss function if we have the targets
-        if (targets != null)
+        // also forward the cross-entropy loss function if we have the targetTokenIndices
+        if (targetTokenIndices != null)
         {
-            CrossEntropyForward(model->acts.probs, targets, B, T, V, model->acts.losses);
+            CrossEntropyForward(model->acts.probabilities, targetTokenIndices, B, T, V, model->acts.losses);
             // for convenience also evaluate the mean loss
             float mean_loss = 0.0f;
             for (int i = 0; i < B * T; i++) { mean_loss += model->acts.losses[i]; }
@@ -403,7 +403,7 @@ internal static partial class Gpt2
         }
         else
         {
-            // if we don't have targets, we don't have a loss
+            // if we don't have targetTokenIndices, we don't have a loss
             model->mean_loss = -1.0f;
         }
     }
@@ -417,10 +417,10 @@ internal static partial class Gpt2
     static unsafe void Backward(GPT2* model)
     {
 
-        // double check we forwarded previously, with targets
+        // double check we forwarded previously, with targetTokenIndices
         if (model->mean_loss == -1.0f)
         {
-            throw new InvalidOperationException("Error: must forward with targets before backward");
+            throw new InvalidOperationException("Error: must forward with targetTokenIndices before backward");
         }
 
         // lazily allocate the memory for gradients of the weights and activations, if needed
@@ -451,7 +451,7 @@ internal static partial class Gpt2
         float dloss_mean = 1.0f / (B * T);
         for (int i = 0; i < B * T; i++) { grads_acts.losses[i] = dloss_mean; }
 
-        CrossEntropySoftmaxBackward(grads_acts.losses, acts.probs, model->targets, B, T, V, grads_acts.logits);
+        CrossEntropySoftmaxBackward(grads_acts.losses, acts.probabilities, model->targetTokenIndices, B, T, V, grads_acts.logits);
         MatMulBackward(grads_acts.logits, acts.lnf, parameters.wte, B, T, C, V, grads.wte, null, grads_acts.lnf);
         float* residual = acts.residual3 + (L - 1) * B * T * C; // last layer's residual
         float* dresidual = grads_acts.residual3 + (L - 1) * B * T * C; // write to last layer's residual
@@ -634,7 +634,7 @@ internal static partial class Gpt2
         free(model->acts_memory);
         free(model->grads_acts_memory);
         free(model->inputs);
-        free(model->targets);
+        free(model->targetTokenIndices);
     }
 
     // ----------------------------------------------------------------------------
@@ -653,7 +653,7 @@ internal static partial class Gpt2
         // output memory
         public int* batch;
         public int* inputs;
-        public int* targets;
+        public int* targetTokenIndices;
         // convenience variables
         public long num_batches;
         bool _disposedValue;
@@ -671,10 +671,10 @@ internal static partial class Gpt2
                 throw new InvalidDataException($"Error: file size is too small for the batch size and sequence length");
             }
 
-            // allocate space for B*T + 1 integers to store the inputs and targets
+            // allocate space for B*T + 1 integers to store the inputs and targetTokenIndices
             this.batch = malloc<int>((B * T + 1));
             this.inputs = this.batch;
-            this.targets = this.batch + 1; // targets are shifted by one
+            this.targetTokenIndices = this.batch + 1; // targetTokenIndices are shifted by one
             this.num_batches = this.file_size / (B * T * sizeof(int));
         }
 

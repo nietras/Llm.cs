@@ -25,6 +25,8 @@ public partial class Llm : ILlm
     // Calling this "Encoder" is confusing as sounds like the entire other part
     // of transformer architecture so renamed to "Embed".
 
+    internal Llm() { }
+
     /// <summary>
     /// Forward pass of the embedding layer.
     /// </summary>
@@ -772,7 +774,7 @@ public partial class Llm : ILlm
         }
     }
 
-    static readonly float GELU_SCALING_FACTOR = MathF.Sqrt(2.0f / MathF.PI);
+    static readonly float GeluScalingFactor = MathF.Sqrt(2.0f / MathF.PI);
     public unsafe static void GeLUForward(float* input, int count, float* output)
     {
         // (approximate) GeLU elementwise non-linearity in the MLP block of Transformer
@@ -781,7 +783,7 @@ public partial class Llm : ILlm
         {
             float x = input[i];
             float cube = 0.044715f * x * x * x;
-            output[i] = 0.5f * x * (1.0f + MathF.Tanh(GELU_SCALING_FACTOR * (x + cube)));
+            output[i] = 0.5f * x * (1.0f + MathF.Tanh(GeluScalingFactor * (x + cube)));
         });
         //for (int i = 0; i < count; i++)
         //{
@@ -800,26 +802,27 @@ public partial class Llm : ILlm
         P.For(0, count, i =>
         {
             float x = input[i];
-            var local_grad = GeLUGrad(x);
-            δinput[i] += local_grad * δoutput[i];
+            var grad = GeLUBackward(x);
+            δinput[i] += grad * δoutput[i];
         });
         //for (int i = 0; i < count; i++)
         //{
         //    float x = input[i];
-        //    var local_grad = δGeLU(x);
-        //    δinput[i] += local_grad * δoutput[i];
+        //    var grad = GeLUBackward(x);
+        //    δinput[i] += grad * δoutput[i];
         //}
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static unsafe float GeLUGrad(float x)
+        static float GeLUBackward(float x)
         {
             float cube = 0.044715f * x * x * x;
-            float tanh_arg = GELU_SCALING_FACTOR * (x + cube);
+            float tanh_arg = GeluScalingFactor * (x + cube);
             float tanh_out = MathF.Tanh(tanh_arg);
             float coshf_out = MathF.Cosh(tanh_arg);
             float sech_out = 1.0f / (coshf_out * coshf_out);
-            float local_grad = 0.5f * (1.0f + tanh_out) + x * 0.5f * sech_out * GELU_SCALING_FACTOR * (1.0f + 3.0f * 0.044715f * x * x);
-            return local_grad;
+            float grad = 0.5f * (1.0f + tanh_out) +
+                x * 0.5f * sech_out * GeluScalingFactor * (1.0f + 3.0f * 0.044715f * x * x);
+            return grad;
         }
     }
 
@@ -842,20 +845,22 @@ public partial class Llm : ILlm
         }
     }
 
-    public unsafe static void SoftmaxForward(float* logits,
-        int batchSize, int tokenCount, int vocabularySize, float* probs)
+    public unsafe static void SoftmaxForward(
+        float* logits,
+        int batchSize, int tokenCount, int vocabularySize,
+        float* probabilities)
     {
-        // output: probs are (batchSize,tokenCount,vocabularySize) of the probabilities (sums to 1.0 in each b,t position)
+        // output: probabilities are (batchSize,tokenCount,vocabularySize) of the probabilities (sums to 1.0 in each b,t position)
         // input: logits is (batchSize,tokenCount,vocabularySize) of the unnormalized log probabilities
         //#pragma omp parallel for collapse(2)
         //for (b = 0; b < batchSize; b++)
         P.ForRanges(batchSize, tokenCount, (b, t) =>
         {
-            // probs <- softmax(logits)
+            // probabilities <- softmax(logits)
             float* logits_bt = logits + b * tokenCount * vocabularySize + t * vocabularySize;
-            float* probs_bt = probs + b * tokenCount * vocabularySize + t * vocabularySize;
+            float* probs_bt = probabilities + b * tokenCount * vocabularySize + t * vocabularySize;
 
-            // maxval is only calculated and subtracted for numerical stability
+            // max is only calculated and subtracted for numerical stability
             float max = float.MinValue;
             for (int i = 0; i < vocabularySize; i++)
             {
@@ -867,35 +872,38 @@ public partial class Llm : ILlm
                 probs_bt[i] = MathF.Exp(logits_bt[i] - max);
                 sum += probs_bt[i];
             }
+            var invSum = 1.0f / sum;
             for (int i = 0; i < vocabularySize; i++)
             {
-                probs_bt[i] /= sum;
+                probs_bt[i] *= invSum;
             }
         });
     }
 
     public unsafe static void CrossEntropyForward(
-        float* probs, int* targets,
+        float* probabilities, int* targetTokenIndices,
         int batchSize, int tokenCount, int vocabularySize,
         float* losses)
     {
         // output: losses is (batchSize,tokenCount) of the individual losses at each position
-        // input: probs are (batchSize,tokenCount,vocabularySize) of the probabilities
-        // input: targets is (batchSize,tokenCount) of integers giving the correct index in logits
+        // input: probabilities are (batchSize,tokenCount,vocabularySize) of the probabilities
+        // input: targetTokenIndices is (batchSize,tokenCount) of integers giving the correct index in logits
         for (int b = 0; b < batchSize; b++)
         {
+            float* probs_b = probabilities + b * tokenCount * vocabularySize;
+            var tokenIndices_b = targetTokenIndices + b * tokenCount;
             for (int t = 0; t < tokenCount; t++)
             {
-                // loss = -log(probs[target])
-                float* probs_bt = probs + b * tokenCount * vocabularySize + t * vocabularySize;
-                int ix = targets[b * tokenCount + t];
-                losses[b * tokenCount + t] = -MathF.Log(probs_bt[ix]);
+                // loss = -log(probabilities[target])
+                float* probs_bt = probs_b + t * vocabularySize;
+                int tokenIndex = tokenIndices_b[t];
+                losses[b * tokenCount + t] = -MathF.Log(probs_bt[tokenIndex]);
             }
         }
     }
 
     public unsafe static void CrossEntropySoftmaxBackward(
-        float* δlosses, float* probs, int* targets,
+        float* δlosses, float* probabilities, int* targetTokenIndices,
         int batchSize, int tokenCount, int vocabularySize,
         float* δlogits)
     {
@@ -905,13 +913,13 @@ public partial class Llm : ILlm
             for (int t = 0; t < tokenCount; t++)
             {
                 float* dlogits_bt = δlogits + b * tokenCount * vocabularySize + t * vocabularySize;
-                float* probs_bt = probs + b * tokenCount * vocabularySize + t * vocabularySize;
+                float* probs_bt = probabilities + b * tokenCount * vocabularySize + t * vocabularySize;
                 float dloss = δlosses[b * tokenCount + t];
-                int ix = targets[b * tokenCount + t];
+                int tokenIndex = targetTokenIndices[b * tokenCount + t];
                 for (int i = 0; i < vocabularySize; i++)
                 {
                     float p = probs_bt[i];
-                    float indicator = i == ix ? 1.0f : 0.0f;
+                    float indicator = i == tokenIndex ? 1.0f : 0.0f;
                     dlogits_bt[i] += (p - indicator) * dloss;
                 }
             }
