@@ -556,7 +556,7 @@ public partial class Llm : ILlm
             int b, int t, int h)
         {
             int qkvChannelCount = channelCount * 3;
-            int headSize = channelCount / headCount; // head size
+            int headSize = channelCount / headCount;
             Debug.Assert(channelCount == (headSize * headCount));
             float scale = 1.0f / MathF.Sqrt(headSize);
 
@@ -564,11 +564,12 @@ public partial class Llm : ILlm
             float* preAtt_bth = preAttention + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
             float* postAtt_bth = postAttention + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
 
-            // pass 1: calculate query dot key and maxval
+            // pass 1: calculate query dot key and max (for softmax)
+            var key_bh = input + b * tokenCount * qkvChannelCount + h * headSize + channelCount * 1; // +channelCount because it's 
             float max = float.MinValue;
             for (int t2 = 0; t2 <= t; t2++) // note: includes t == tokenCount
             {
-                float* key_t2 = input + b * tokenCount * qkvChannelCount + t2 * qkvChannelCount + h * headSize + channelCount; // +channelCount because it's key
+                float* key_t2 = key_bh + t2 * qkvChannelCount;
 
                 // (query_t) dot (key_t2)
                 float dot = 0.0f;
@@ -583,21 +584,21 @@ public partial class Llm : ILlm
 
             // pass 2: calculate the exp and keep track of sum
             // maxval is being calculated and subtracted only for numerical stability
-            float expsum = 0.0f;
+            float expSum = 0.0f;
             for (int t2 = 0; t2 <= t; t2++)
             {
-                float expv = MathF.Exp(preAtt_bth[t2] - max);
-                expsum += expv;
-                postAtt_bth[t2] = expv;
+                float exp = MathF.Exp(preAtt_bth[t2] - max);
+                expSum += exp;
+                postAtt_bth[t2] = exp;
             }
-            float expsum_inv = expsum == 0.0f ? 0.0f : 1.0f / expsum;
+            float invExpSum = expSum == 0.0f ? 0.0f : 1.0f / expSum;
 
             // pass 3: normalize to get the softmax
             for (int t2 = 0; t2 < tokenCount; t2++)
             {
                 if (t2 <= t)
                 {
-                    postAtt_bth[t2] *= expsum_inv;
+                    postAtt_bth[t2] *= invExpSum;
                 }
                 else
                 {
@@ -610,9 +611,11 @@ public partial class Llm : ILlm
             // pass 4: accumulate weighted values into the output of attention
             float* output_bth = output + b * tokenCount * channelCount + t * channelCount + h * headSize;
             for (int i = 0; i < headSize; i++) { output_bth[i] = 0.0f; }
+
+            float* value_bh = input + b * tokenCount * qkvChannelCount + h * headSize + channelCount * 2; // +channelCount*2 because it's value
             for (int t2 = 0; t2 <= t; t2++)
             {
-                float* value_t2 = input + b * tokenCount * qkvChannelCount + t2 * qkvChannelCount + h * headSize + channelCount * 2; // +channelCount*2 because it's value
+                float* value_t2 = value_bh + t2 * qkvChannelCount;
                 float att_btht2 = postAtt_bth[t2];
                 for (int i = 0; i < headSize; i++)
                 {
