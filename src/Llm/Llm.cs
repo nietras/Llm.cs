@@ -504,6 +504,17 @@ public partial class Llm : ILlm
         }
     }
 
+    /// <summary>
+    /// Forward pass of the Attention layer.
+    /// </summary>
+    /// <param name="input">The input tensor of shape [batchSize, tokenCount, 3 * channelCount] holding the query, key, and value (Q, K, V) vectors.</param>
+    /// <param name="batchSize">The size of the batch.</param>
+    /// <param name="tokenCount">The number of tokens in the sequence.</param>
+    /// <param name="channelCount">The number of channels in the input tensor.</param>
+    /// <param name="headCount">The number of attention heads.</param>
+    /// <param name="preAttention">The pre-attention tensor of shape [batchSize, headCount, tokenCount, tokenCount] that holds the pre-attention scores.</param>
+    /// <param name="postAttention">The post-attention tensor of shape [batchSize, headCount, tokenCount, tokenCount] that holds the post-attention scores.</param>
+    /// <param name="output">The output tensor of shape [batchSize, tokenCount, channelCount] that holds the attention output.</param>
     public unsafe static void AttentionForward(
         // [batchSize, tokenCount, 3 * channelCount (query Q, key K, value V)]
         float* input,
@@ -583,7 +594,7 @@ public partial class Llm : ILlm
             }
 
             // pass 2: calculate the exp and keep track of sum
-            // maxval is being calculated and subtracted only for numerical stability
+            // max is being calculated and subtracted only for numerical stability
             float expSum = 0.0f;
             for (int t2 = 0; t2 <= t; t2++)
             {
@@ -625,15 +636,28 @@ public partial class Llm : ILlm
         }
     }
 
-    public unsafe static void AttentionBackward(float* δoutput, float* att, float* input,
-                            int batchSize, int tokenCount, int channelCount,
-                            int headCount, float* dpreatt, float* datt, float* δinput)
+    /// <summary>
+    /// Backward pass of the Attention layer.
+    /// </summary>
+    /// <param name="δoutput">The gradient of the output tensor. Shape: [batchSize, tokenCount, channelCount].</param>
+    /// <param name="postAttention">The post-softmax attention tensor. Shape: [batchSize, headCount, tokenCount, tokenCount].</param>
+    /// <param name="input">The input tensor. Shape: [batchSize, tokenCount, 3 * channelCount (Q, K, V)].</param>
+    /// <param name="batchSize">The size of the batch.</param>
+    /// <param name="tokenCount">The number of tokens.</param>
+    /// <param name="channelCount">The number of channels.</param>
+    /// <param name="headCount">The number of attention heads.</param>
+    /// <param name="δpreAttention">The gradient of the pre-softmax attention tensor. Shape: [batchSize, headCount, tokenCount, tokenCount].</param>
+    /// <param name="δpostAttention">The gradient of the attention tensor. Shape: [batchSize, headCount, tokenCount, tokenCount].</param>
+    /// <param name="δinput">The gradient of the input tensor. Shape: [batchSize, tokenCount, 3 * channelCount (Q, K, V)].</param>
+    public unsafe static void AttentionBackward(
+        // [batchSize, tokenCount, channelCount], [batchSize, headCount, tokenCount, tokenCount], [batchSize, tokenCount, 3 * channelCount (Q, K, V)]
+        float* δoutput, float* postAttention, float* input,
+        int batchSize, int tokenCount, int channelCount, int headCount,
+        // [batchSize, headCount, tokenCount, tokenCount], [batchSize, headCount, tokenCount, tokenCount], [batchSize, tokenCount, 3 * channelCount (Q, K, V)]
+        float* δpreAttention, float* δpostAttention, float* δinput)
     {
-        // input/δinput are (batchSize, tokenCount, 3C) Q,K,vocabularySize
-        // att/datt/dpreatt are (batchSize, headCount, tokenCount, tokenCount)
-        // δoutput is (batchSize, tokenCount, channelCount)
-        int C3 = channelCount * 3;
-        int headSize = channelCount / headCount; // head size
+        int qkvChannelCount = channelCount * 3;
+        int headSize = channelCount / headCount;
         float scale = 1.0f / MathF.Sqrt(headSize);
 
         //for (int b = 0; b < batchSize; b++)
@@ -642,7 +666,9 @@ public partial class Llm : ILlm
         //    {
         //        for (int h = 0; h < headCount; h++)
         //        {
-        //            AttentionBackwardAtBatchTokenHead(δinput, dpreatt, datt, δoutput, input, att, tokenCount, channelCount, headCount, C3, headSize, scale, b, t, h);
+        //            AttentionBackwardAtBatchTokenHead(δoutput, postAttention, input,
+        //                tokenCount, channelCount, headCount, qkvChannelCount, headSize, scale,
+        //                δpreAttention, δpostAttention, δinput, b, t, h);
         //        }
         //    }
         //}
@@ -650,32 +676,38 @@ public partial class Llm : ILlm
         // like δinput (derivative of input which is output from this method)
         //P.ForRanges(batchSize, tokenCount, headCount, (b, t, h) =>
         //{
-        //    AttentionBackwardAtBatchTokenHead(δinput, dpreatt, datt, δoutput, input, att, tokenCount, channelCount, headCount, C3, headSize, scale, b, t, h);
+        //    AttentionBackwardAtBatchTokenHead(δoutput, postAttention, input,
+        //        tokenCount, channelCount, headCount, qkvChannelCount, headSize, scale,
+        //        δpreAttention, δpostAttention, δinput, b, t, h);
         //});
         P.ForRanges(batchSize, headCount, (b, h) =>
         {
             for (int t = 0; t < tokenCount; t++)
             {
-                AttentionBackwardAtBatchTokenHead(δinput, dpreatt, datt, δoutput, input, att, tokenCount, channelCount, headCount, C3, headSize, scale, b, t, h);
+                AttentionBackwardAtBatchTokenHead(δoutput, postAttention, input, tokenCount, channelCount, headCount, qkvChannelCount, headSize, scale, δpreAttention, δpostAttention, δinput, b, t, h);
             }
         });
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        static unsafe void AttentionBackwardAtBatchTokenHead(float* δinput, float* dpreatt, float* datt, float* δoutput, float* input, float* att,
-            int tokenCount, int channelCount, int headCount, int C3, int headSize, float scale, int b, int t, int h)
+        static unsafe void AttentionBackwardAtBatchTokenHead(
+            float* δoutput, float* postAttention, float* input,
+            int tokenCount, int channelCount, int headCount,
+            int qkvChannelCount, int headSize, float scale,
+            float* δpreAttention, float* δpostAttention, float* δinput,
+            int b, int t, int h)
         {
-            float* att_bth = att + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
-            float* datt_bth = datt + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
-            float* dpreatt_bth = dpreatt + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
-            float* dquery_t = δinput + b * tokenCount * C3 + t * C3 + h * headSize;
-            float* query_t = input + b * tokenCount * C3 + t * C3 + h * headSize;
+            float* att_bth = postAttention + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
+            float* datt_bth = δpostAttention + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
+            float* dpreatt_bth = δpreAttention + b * headCount * tokenCount * tokenCount + h * tokenCount * tokenCount + t * tokenCount;
+            float* dquery_t = δinput + b * tokenCount * qkvChannelCount + t * qkvChannelCount + h * headSize;
+            float* query_t = input + b * tokenCount * qkvChannelCount + t * qkvChannelCount + h * headSize;
 
             // backward pass 4, through the value accumulation
             float* δoutput_bth = δoutput + b * tokenCount * channelCount + t * channelCount + h * headSize;
             for (int t2 = 0; t2 <= t; t2++)
             {
-                float* value_t2 = input + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount * 2; // +channelCount*2 because it's value
-                float* dvalue_t2 = δinput + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount * 2;
+                float* value_t2 = input + b * tokenCount * qkvChannelCount + t2 * qkvChannelCount + h * headSize + channelCount * 2; // +channelCount*2 because it's value
+                float* dvalue_t2 = δinput + b * tokenCount * qkvChannelCount + t2 * qkvChannelCount + h * headSize + channelCount * 2;
                 int i = 0;
                 var att_bth_t2 = att_bth[t2];
                 var datt_bth_sum = 0f;
@@ -685,9 +717,6 @@ public partial class Llm : ILlm
                     var datt_bth_sum_vector = Vector<float>.Zero;
                     for (; i < headSize - Vector<float>.Count; i += Vector<float>.Count)
                     {
-                        // in the forward pass this was:
-                        // output_bth[i] += att_bth[t2] * value_t2[i];
-                        // so now we have:
                         var valueVector = Vector.Load(value_t2 + i);
                         var doutputVector = Vector.Load(δoutput_bth + i);
                         datt_bth_sum_vector += valueVector * doutputVector;
@@ -728,8 +757,8 @@ public partial class Llm : ILlm
             // backward pass 1, the query @ key matmul
             for (int t2 = 0; t2 <= t; t2++)
             {
-                float* key_t2 = input + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount; // +channelCount because it's key
-                float* dkey_t2 = δinput + b * tokenCount * C3 + t2 * C3 + h * headSize + channelCount; // +channelCount because it's key
+                float* key_t2 = input + b * tokenCount * qkvChannelCount + t2 * qkvChannelCount + h * headSize + channelCount; // +channelCount because it's key
+                float* dkey_t2 = δinput + b * tokenCount * qkvChannelCount + t2 * qkvChannelCount + h * headSize + channelCount; // +channelCount because it's key
                 var dpreatt_bth_t2_scaled = dpreatt_bth[t2] * scale;
                 for (int i = 0; i < headSize; i++)
                 {

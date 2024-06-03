@@ -31,11 +31,11 @@ public interface ILlm
     static abstract unsafe void AttentionForward(
         float* input,
         int batchSize, int tokenCount, int channelCount, int headCount,
-        float* preatt, float* att, float* output);
+        float* preAttention, float* postAttention, float* output);
     static abstract unsafe void AttentionBackward(
-        float* δoutput, float* att, float* input,
+        float* δoutput, float* postAttention, float* input,
         int batchSize, int tokenCount, int channelCount, int headCount,
-        float* dpreatt, float* datt, float* δinput);
+        float* δpreAttention, float* δpostAttention, float* δinput);
 
     static abstract unsafe void GeLUForward(float* input, int count, float* output);
     static abstract unsafe void GeLUBackward(float* δoutput, float* input, int count, float* δinput);
