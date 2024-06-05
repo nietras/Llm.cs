@@ -27,16 +27,6 @@ public partial class Llm : ILlm
 
     internal Llm() { }
 
-    /// <summary>
-    /// Forward pass of the embedding layer.
-    /// </summary>
-    /// <param name="tokenIndices">Pointer to the input tensor of token indices/ids.</param>
-    /// <param name="tokenEmbeddings">Pointer to the token embeddings tensor.</param>
-    /// <param name="positionEmbeddings">Pointer to the position embeddings tensor.</param>
-    /// <param name="batchSize">The size of the batch.</param>
-    /// <param name="tokenCount">The number of tokens.</param>
-    /// <param name="channelCount">The number of channels.</param>
-    /// <param name="output">Pointer to the output tensor.</param>
     public static unsafe void EmbedForward(
         // [batchSize, tokenCount], [vocabularySize, channelCount], [maxTokenCount, channelCount]
         int* tokenIndices, float* tokenEmbeddings, float* positionEmbeddings,
@@ -65,16 +55,6 @@ public partial class Llm : ILlm
         }
     }
 
-    /// <summary>
-    /// Backward pass of the embedding layer.
-    /// </summary>
-    /// <param name="δoutput">Pointer to the output derivative tensor of shape [batchSize, tokenCount, channelCount].</param>
-    /// <param name="tokenIndices">Pointer to the token indices tensor of shape [batchSize, tokenCount].</param>
-    /// <param name="batchSize">The size of the batch.</param>
-    /// <param name="tokenCount">The number of tokens.</param>
-    /// <param name="channelCount">The number of channels.</param>
-    /// <param name="δtokenEmbeddings">Pointer to the token embeddings derivative tensor of shape [vocabularySize, channelCount].</param>
-    /// <param name="δpositionEmbeddings">Pointer to the position embeddings derivative tensor of shape [maxTokenCount, channelCount].</param>
     public static unsafe void EmbedBackward(
         // [batchSize, tokenCount, channelCount], [batchSize, tokenCount]
         float* δoutput, int* tokenIndices,
@@ -100,18 +80,6 @@ public partial class Llm : ILlm
         }
     }
 
-    /// <summary>
-    /// Forward pass of Layer Normalization.
-    /// </summary>
-    /// <param name="input">The input tensor of shape [batchSize, tokenCount, channelCount].</param>
-    /// <param name="weight">The weight tensor of shape [channelCount].</param>
-    /// <param name="bias">The bias tensor of shape [channelCount].</param>
-    /// <param name="batchSize">The batch size.</param>
-    /// <param name="tokenCount">The token count.</param>
-    /// <param name="channelCount">The channel count.</param>
-    /// <param name="mean">The mean tensor of shape [batchSize, tokenCount].</param>
-    /// <param name="invStdDev">The inverse standard deviation tensor of shape [batchSize, tokenCount].</param>
-    /// <param name="output">The output tensor of shape [batchSize, tokenCount, channelCount].</param>
     public static unsafe void LayerNormForward(
         // [batchSize, tokenCount, channelCount], [channelCount], [channelCount]
         float* input, float* weight, float* bias,
@@ -186,20 +154,6 @@ public partial class Llm : ILlm
         }
     }
 
-    /// <summary>
-    /// Backward pass of Layer Normalization.
-    /// </summary>
-    /// <param name="δoutput">The gradients of the output tensor. Shape: [batchSize, tokenCount, channelCount].</param>
-    /// <param name="input">The input tensor. Shape: [batchSize, tokenCount, channelCount].</param>
-    /// <param name="weight">The weight tensor. Shape: [channelCount].</param>
-    /// <param name="mean">The mean tensor. Shape: [batchSize, tokenCount].</param>
-    /// <param name="invStdDev">The inverse standard deviation tensor. Shape: [batchSize, tokenCount].</param>
-    /// <param name="batchSize">The size of the batch.</param>
-    /// <param name="tokenCount">The number of tokens.</param>
-    /// <param name="channelCount">The number of channels.</param>
-    /// <param name="δweight">The gradients of the weight tensor. Shape: [channelCount].</param>
-    /// <param name="δbias">The gradients of the bias tensor. Shape: [channelCount].</param>
-    /// <param name="δinput">The gradients of the input tensor. Shape: [batchSize, tokenCount, channelCount].</param>
     public static unsafe void LayerNormBackward(
         // [batchSize, tokenCount, channelCount], [batchSize, tokenCount, channelCount], [channelCount]
         float* δoutput, float* input, float* weight,
@@ -263,23 +217,6 @@ public partial class Llm : ILlm
         }
     }
 
-    /// <summary>
-    /// Matrix multiplication between the input tensor and transposed weight tensor 
-    /// and optionally adds bias if not null.
-    /// </summary>
-    /// <remarks>
-    /// Note how this is more of a vector * matrix operation than a matrix * matrix operation, 
-    /// since for each batch and token it multiples input row vector with 
-    /// weight (transposed) matrix and adds bias vector.
-    /// </remarks>
-    /// <param name="input">The input tensor of shape [batchSize, tokenCount, inputChannelCount].</param>
-    /// <param name="weight">The weight tensor (transposed) of shape [outputChannelCount, inputChannelCount].</param>
-    /// <param name="bias">The bias tensor of shape [outputChannelCount].</param>
-    /// <param name="batchSize">The size of the batch.</param>
-    /// <param name="tokenCount">The number of tokens.</param>
-    /// <param name="inputChannelCount">The number of input channels.</param>
-    /// <param name="outputChannelCount">The number of output channels.</param>
-    /// <param name="output">The output tensor of shape [batchSize, tokenCount, outputChannelCount].</param>
     public static unsafe void MatMulForward(
         // [batchSize, tokenCount, inputChannelCount], [outputChannelCount, inputChannelCount], [outputChannelCount]
         float* input, float* weight, float* bias,
@@ -399,19 +336,6 @@ public partial class Llm : ILlm
         }
     }
 
-    /// <summary>
-    /// Backward pass of matrix multiplication operation.
-    /// </summary>
-    /// <param name="δoutput">The gradient of the output tensor. Shape: [batchSize, tokenCount, outputChannelCount].</param>
-    /// <param name="input">The input tensor. Shape: [batchSize, tokenCount, inputChannelCount].</param>
-    /// <param name="weight">The weight tensor. Shape: [outputChannelCount, inputChannelCount].</param>
-    /// <param name="batchSize">The size of the batch.</param>
-    /// <param name="tokenCount">The number of tokens.</param>
-    /// <param name="inputChannelCount">The number of input channels.</param>
-    /// <param name="outputChannelCount">The number of output channels.</param>
-    /// <param name="δweight">The gradient of the weight tensor. Shape: [outputChannelCount, inputChannelCount].</param>
-    /// <param name="δbias">The gradient of the bias tensor. Shape: [outputChannelCount].</param>
-    /// <param name="δinput">The gradient of the input tensor. Shape: [batchSize, tokenCount, inputChannelCount].</param>
     public static unsafe void MatMulBackward(
         // [batchSize, tokenCount, outputChannelCount], [batchSize, tokenCount, inputChannelCount], [outputChannelCount, inputChannelCount]
         float* δoutput, float* input, float* weight,
@@ -506,17 +430,6 @@ public partial class Llm : ILlm
         }
     }
 
-    /// <summary>
-    /// Forward pass of the Attention layer.
-    /// </summary>
-    /// <param name="input">The input tensor of shape [batchSize, tokenCount, 3 * channelCount] holding the query, key, and value (Q, K, V) vectors.</param>
-    /// <param name="batchSize">The size of the batch.</param>
-    /// <param name="tokenCount">The number of tokens in the sequence.</param>
-    /// <param name="channelCount">The number of channels in the input tensor.</param>
-    /// <param name="headCount">The number of attention heads.</param>
-    /// <param name="preAttention">The pre-attention tensor of shape [batchSize, headCount, tokenCount, tokenCount] that holds the pre-attention scores.</param>
-    /// <param name="postAttention">The post-attention tensor of shape [batchSize, headCount, tokenCount, tokenCount] that holds the post-attention scores.</param>
-    /// <param name="output">The output tensor of shape [batchSize, tokenCount, channelCount] that holds the attention output.</param>
     public static unsafe void AttentionForward(
         // [batchSize, tokenCount, 3 * channelCount (query Q, key K, value V)]
         float* input,
@@ -638,19 +551,6 @@ public partial class Llm : ILlm
         }
     }
 
-    /// <summary>
-    /// Backward pass of the Attention layer.
-    /// </summary>
-    /// <param name="δoutput">The gradient of the output tensor. Shape: [batchSize, tokenCount, channelCount].</param>
-    /// <param name="postAttention">The post-softmax attention tensor. Shape: [batchSize, headCount, tokenCount, tokenCount].</param>
-    /// <param name="input">The input tensor. Shape: [batchSize, tokenCount, 3 * channelCount (Q, K, V)].</param>
-    /// <param name="batchSize">The size of the batch.</param>
-    /// <param name="tokenCount">The number of tokens.</param>
-    /// <param name="channelCount">The number of channels.</param>
-    /// <param name="headCount">The number of attention heads.</param>
-    /// <param name="δpreAttention">The gradient of the pre-softmax attention tensor. Shape: [batchSize, headCount, tokenCount, tokenCount].</param>
-    /// <param name="δpostAttention">The gradient of the attention tensor. Shape: [batchSize, headCount, tokenCount, tokenCount].</param>
-    /// <param name="δinput">The gradient of the input tensor. Shape: [batchSize, tokenCount, 3 * channelCount (Q, K, V)].</param>
     public static unsafe void AttentionBackward(
         // [batchSize, tokenCount, channelCount], [batchSize, headCount, tokenCount, tokenCount], [batchSize, tokenCount, 3 * channelCount (Q, K, V)]
         float* δoutput, float* postAttention, float* input,
@@ -775,12 +675,6 @@ public partial class Llm : ILlm
     }
 
     static readonly float GeluScalingFactor = MathF.Sqrt(2.0f / MathF.PI);
-    /// <summary>
-    /// Forward pass of Tanh based approximate GeLU (Gaussian Error Linear Unit).
-    /// </summary>
-    /// <param name="input">The input array.</param>
-    /// <param name="count">The number of elements in the <paramref name="input"/> and <paramref name="output"/> array.</param>
-    /// <param name="output">The output array.</param>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static unsafe void GeLUForward(float* input, int count, float* output)
     {
@@ -794,13 +688,6 @@ public partial class Llm : ILlm
         //}
     }
 
-    /// <summary>
-    /// Backward pass of Tanh based approximate GeLU (Gaussian Error Linear Unit).
-    /// </summary>
-    /// <param name="δoutput">The gradient of the output.</param>
-    /// <param name="input">The input values.</param>
-    /// <param name="count">The number of elements in the <paramref name="δoutput"/>, <paramref name="input"/> and <paramref name="δinput"/>.</param>
-    /// <param name="δinput">The gradient of the input.</param>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static unsafe void GeLUBackward(
         float* δoutput, float* input,
@@ -829,13 +716,6 @@ public partial class Llm : ILlm
         }
     }
 
-    /// <summary>
-    /// Forward pass of the residual/add operation.
-    /// </summary>
-    /// <param name="left">The input array for the left operand.</param>
-    /// <param name="right">The input array for the right operand.</param>
-    /// <param name="count">The number of elements in the arrays.</param>
-    /// <param name="output">The output array.</param>
     public static unsafe void ResidualForward(
         float* left, float* right, int count, float* output)
     {
@@ -845,13 +725,6 @@ public partial class Llm : ILlm
         }
     }
 
-    /// <summary>
-    /// Backward pass of the residual/add connection.
-    /// </summary>
-    /// <param name="δoutput">The gradients of the output.</param>
-    /// <param name="count">The number of elements in the tensors.</param>
-    /// <param name="δleft">The gradients of the left tensor.</param>
-    /// <param name="δright">The gradients of the right tensor.</param>
     public static unsafe void ResidualBackward(
         float* δoutput, int count, float* δleft, float* δright)
     {
@@ -863,14 +736,6 @@ public partial class Llm : ILlm
         }
     }
 
-    /// <summary>
-    /// Forward pass of the softmax layer.
-    /// </summary>
-    /// <param name="logits">The input logits. Shape: [batchSize, tokenCount, vocabularySize]</param>
-    /// <param name="batchSize">The size of the batch.</param>
-    /// <param name="tokenCount">The number of tokens.</param>
-    /// <param name="vocabularySize">The size of the vocabulary.</param>
-    /// <param name="probabilities">The output probabilities. Sums to 1.0 for each batch,token. Shape: [batchSize, tokenCount, vocabularySize]</param>
     public static unsafe void SoftmaxForward(
         // [batchSize, tokenCount, vocabularySize]
         float* logits,
@@ -908,15 +773,6 @@ public partial class Llm : ILlm
         });
     }
 
-    /// <summary>
-    /// Forward pass of the cross-entropy loss.
-    /// </summary>
-    /// <param name="probabilities">The input probabilities. Shape: [batchSize, tokenCount, vocabularySize]</param>
-    /// <param name="targetTokenIndices">The target token indices. Shape: [batchSize, tokenCount]</param>
-    /// <param name="batchSize">The size of the batch.</param>
-    /// <param name="tokenCount">The number of tokens.</param>
-    /// <param name="vocabularySize">The size of the vocabulary.</param>
-    /// <param name="losses">The output losses. Shape: [batchSize, tokenCount]</param>
     public static unsafe void CrossEntropyForward(
         // [batchSize, tokenCount, vocabularySize], [batchSize, tokenCount]
         float* probabilities, int* targetTokenIndices,
@@ -938,16 +794,6 @@ public partial class Llm : ILlm
         }
     }
 
-    /// <summary>
-    /// Backward pass of both CrossEntropy and Softmax.
-    /// </summary>
-    /// <param name="δlosses">The gradients of the losses with respect to the output probabilities. Shape: [batchSize, tokenCount].</param>
-    /// <param name="probabilities">The output probabilities. Shape: [batchSize, tokenCount, vocabularySize].</param>
-    /// <param name="targetTokenIndices">The indices of the target tokens. Shape: [batchSize, tokenCount].</param>
-    /// <param name="batchSize">The size of the batch.</param>
-    /// <param name="tokenCount">The number of tokens.</param>
-    /// <param name="vocabularySize">The size of the vocabulary.</param>
-    /// <param name="δlogits">The gradients of the logits with respect to the input. Shape: [batchSize, tokenCount, vocabularySize].</param>
     public static unsafe void CrossEntropySoftmaxBackward(
         // [batchSize, tokenCount], [batchSize, tokenCount, vocabularySize], [batchSize, tokenCount]
         float* δlosses, float* probabilities, int* targetTokenIndices,
