@@ -208,4 +208,23 @@ public interface ILlm
         float* δlosses, float* probabilities, int* targetTokenIndices,
         int batchSize, int tokenCount, int vocabularySize,
         float* δlogits);
+
+    /// <summary>
+    /// Performs the AdamW optimization algorithm to update the parameters.
+    /// </summary>
+    /// <param name="gradients">Pointer to the gradients.</param>
+    /// <param name="ms">Pointer to the first moment estimates.</param>
+    /// <param name="vs">Pointer to the second moment estimates.</param>
+    /// <param name="parameters">Pointer to the parameters.</param>
+    /// <param name="parameterCount">The number of parameters.</param>
+    /// <param name="learningRate">The learning rate.</param>
+    /// <param name="beta1">The exponential decay rate for the first moment estimates.</param>
+    /// <param name="beta2">The exponential decay rate for the second moment estimates.</param>
+    /// <param name="eps">A small value to prevent division by zero.</param>
+    /// <param name="weightDecay">The weight decay rate.</param>
+    /// <param name="t">The current time step.</param>
+    static abstract unsafe void AdamW(
+        float* gradients, float* ms, float* vs, float* parameters,
+        long parameterCount, float learningRate,
+        float beta1, float beta2, float eps, float weightDecay, int t);
 }

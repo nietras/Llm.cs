@@ -819,4 +819,86 @@ public partial class Llm : ILlm
             }
         }
     }
+
+    public static unsafe void AdamW(
+        float* gradients, float* ms, float* vs, float* parameters,
+        long parameterCount, float learningRate,
+        float beta1, float beta2, float eps, float weightDecay, int t)
+    {
+        // reference: https://pytorch.org/docs/stable/generated/torch.optim.AdamW.html
+
+        var invOneMinusDecayBeta1 = 1.0f / (1.0f - MathF.Pow(beta1, t));
+        var invOneMinusDecayBeta2 = 1.0f / (1.0f - MathF.Pow(beta2, t));
+
+        var start = 0L;
+        var end = parameterCount;
+        AdamWImpl(gradients, ms, vs, parameters, learningRate, beta1,
+            beta2, eps, weightDecay,
+            invOneMinusDecayBeta1, invOneMinusDecayBeta2, start, end);
+
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        static unsafe void AdamWImpl(
+            float* gradients, float* ms, float* vs, float* parameters,
+            float learningRate, float beta1, float beta2,
+            float eps, float weightDecay, float invOneMinusDecayBeta1, float invOneMinusDecayBeta2,
+            long start, long end)
+        {
+            var beta1Vector = new Vector<float>(beta1);
+            var beta2Vector = new Vector<float>(beta2);
+            var oneMinusBeta1Vector = new Vector<float>(1.0f - beta1);
+            var oneMinusBeta2Vector = new Vector<float>(1.0f - beta2);
+            var epsVector = new Vector<float>(eps);
+            var learningRateVector = new Vector<float>(learningRate);
+            var weightDecayVector = new Vector<float>(weightDecay);
+            var invOneMinusDecayBeta1Vector = new Vector<float>(invOneMinusDecayBeta1);
+            var invOneMinusDecayBeta2Vector = new Vector<float>(invOneMinusDecayBeta2);
+
+            long i = start;
+
+            for (; i < (end - Vector<float>.Count); i += Vector<float>.Count)
+            {
+                var paramVector = Vector.Load(parameters + i);
+                var gradVector = Vector.Load(gradients + i);
+                var mVector = Vector.Load(ms + i);
+                var vVector = Vector.Load(vs + i);
+
+                // update the first moment (momentum)
+                var m = beta1Vector * mVector + oneMinusBeta1Vector * gradVector;
+                // update the second moment (RMSprop)
+                var v = beta2Vector * vVector + oneMinusBeta2Vector * gradVector * gradVector;
+                // bias-correct both moments
+                var mHat = m * invOneMinusDecayBeta1Vector;
+                var vHat = v * invOneMinusDecayBeta2Vector;
+
+                // update
+                paramVector -= learningRateVector *
+                    (mHat / (Vector.SquareRoot(vHat) + epsVector) +
+                     weightDecayVector * paramVector);
+
+                Vector.Store(m, ms + i);
+                Vector.Store(v, vs + i);
+                Vector.Store(paramVector, parameters + i);
+            }
+            for (; i < end; i++)
+            {
+                var param = parameters[i];
+                var grad = gradients[i];
+
+                // update the first moment (momentum)
+                var m = beta1 * ms[i] + (1.0f - beta1) * grad;
+                // update the second moment (RMSprop)
+                var v = beta2 * vs[i] + (1.0f - beta2) * grad * grad;
+                // bias-correct both moments
+                var mHat = m * invOneMinusDecayBeta1;
+                var vHat = v * invOneMinusDecayBeta2;
+
+                // update
+                ms[i] = m;
+                vs[i] = v;
+                parameters[i] -= learningRate *
+                    (mHat / (MathF.Sqrt(vHat) + eps) +
+                     weightDecay * param);
+            }
+        }
+    }
 }
