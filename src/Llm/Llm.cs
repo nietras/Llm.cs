@@ -863,9 +863,19 @@ public partial class Llm : ILlm
         }
     }
 
+    /// <summary>
+    /// Forward pass of the softmax layer.
+    /// </summary>
+    /// <param name="logits">The input logits. Shape: [batchSize, tokenCount, vocabularySize]</param>
+    /// <param name="batchSize">The size of the batch.</param>
+    /// <param name="tokenCount">The number of tokens.</param>
+    /// <param name="vocabularySize">The size of the vocabulary.</param>
+    /// <param name="probabilities">The output probabilities. Sums to 1.0 for each batch,token. Shape: [batchSize, tokenCount, vocabularySize]</param>
     public static unsafe void SoftmaxForward(
+        // [batchSize, tokenCount, vocabularySize]
         float* logits,
         int batchSize, int tokenCount, int vocabularySize,
+        // [batchSize, tokenCount, vocabularySize]
         float* probabilities)
     {
         // output: probabilities are (batchSize,tokenCount,vocabularySize) of the probabilities (sums to 1.0 in each b,t position)
@@ -898,14 +908,22 @@ public partial class Llm : ILlm
         });
     }
 
+    /// <summary>
+    /// Forward pass of the cross-entropy loss.
+    /// </summary>
+    /// <param name="probabilities">The input probabilities. Shape: [batchSize, tokenCount, vocabularySize]</param>
+    /// <param name="targetTokenIndices">The target token indices. Shape: [batchSize, tokenCount]</param>
+    /// <param name="batchSize">The size of the batch.</param>
+    /// <param name="tokenCount">The number of tokens.</param>
+    /// <param name="vocabularySize">The size of the vocabulary.</param>
+    /// <param name="losses">The output losses. Shape: [batchSize, tokenCount]</param>
     public static unsafe void CrossEntropyForward(
+        // [batchSize, tokenCount, vocabularySize], [batchSize, tokenCount]
         float* probabilities, int* targetTokenIndices,
         int batchSize, int tokenCount, int vocabularySize,
+        // [batchSize, tokenCount]
         float* losses)
     {
-        // output: losses is (batchSize,tokenCount) of the individual losses at each position
-        // input: probabilities are (batchSize,tokenCount,vocabularySize) of the probabilities
-        // input: targetTokenIndices is (batchSize,tokenCount) of integers giving the correct index in logits
         for (int b = 0; b < batchSize; b++)
         {
             float* probs_b = probabilities + b * tokenCount * vocabularySize;
@@ -920,9 +938,21 @@ public partial class Llm : ILlm
         }
     }
 
+    /// <summary>
+    /// Backward pass of both CrossEntropy and Softmax.
+    /// </summary>
+    /// <param name="δlosses">The gradients of the losses with respect to the output probabilities. Shape: [batchSize, tokenCount].</param>
+    /// <param name="probabilities">The output probabilities. Shape: [batchSize, tokenCount, vocabularySize].</param>
+    /// <param name="targetTokenIndices">The indices of the target tokens. Shape: [batchSize, tokenCount].</param>
+    /// <param name="batchSize">The size of the batch.</param>
+    /// <param name="tokenCount">The number of tokens.</param>
+    /// <param name="vocabularySize">The size of the vocabulary.</param>
+    /// <param name="δlogits">The gradients of the logits with respect to the input. Shape: [batchSize, tokenCount, vocabularySize].</param>
     public static unsafe void CrossEntropySoftmaxBackward(
+        // [batchSize, tokenCount], [batchSize, tokenCount, vocabularySize], [batchSize, tokenCount]
         float* δlosses, float* probabilities, int* targetTokenIndices,
         int batchSize, int tokenCount, int vocabularySize,
+        // [batchSize, tokenCount, vocabularySize]
         float* δlogits)
     {
         // backwards through both softmax and crossentropy
