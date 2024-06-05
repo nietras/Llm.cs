@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Reflection;
+using System.Threading;
 using nietras.LargeLanguageModel;
 
 Action<string> log = t => { Console.WriteLine(t); Trace.WriteLine(t); };
@@ -12,6 +13,12 @@ var location = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
 var dataDirectory = Path.Combine(location!, "../../../");
 
 DownloadBinaryFilesIfNotExists(Gpt2.FileNames, Gpt2.RemoteUrl, dataDirectory, log);
+
+//ThreadPool.SetMinThreads(Environment.ProcessorCount, Environment.ProcessorCount);
+//ThreadPool.SetMaxThreads(Environment.ProcessorCount, Environment.ProcessorCount);
+log($"{nameof(ThreadPool.ThreadCount)} {ThreadPool.ThreadCount}");
+ThreadPool.GetMinThreads(out var workerThreads, out var completionPortThreads);
+log($"MinThreads {workerThreads} {completionPortThreads}");
 
 Gpt2.Test(dataDirectory);
 //Gpt2.Train(dataDirectory);

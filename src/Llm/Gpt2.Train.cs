@@ -72,7 +72,7 @@ internal static partial class Gpt2
                 for (int i = 0; i < val_num_batches; i++)
                 {
                     val_loader.dataloader_next_batch();
-                    Forward(&model, val_loader.inputs, val_loader.targets, B, T);
+                    Forward(&model, val_loader.inputs, val_loader.targetTokenIndices, B, T);
                     val_loss += model.mean_loss;
                 }
                 val_loss /= val_num_batches;
@@ -90,9 +90,9 @@ internal static partial class Gpt2
                     // leaving this alone because you want separate code for inference anyway
                     // the inference here is just for sanity checking purposes
                     Forward(&model, gen_tokens, null, 1, t);
-                    float* probs = model.acts.probs + (t - 1) * model.config.vocab_size;
+                    float* probabilities = model.acts.probabilities + (t - 1) * model.config.vocab_size;
                     float coin = random_f32(&rng_state);
-                    int next_token = sample_mult(probs, model.config.vocab_size, coin);
+                    int next_token = sample_mult(probabilities, model.config.vocab_size, coin);
                     gen_tokens[t] = next_token;
                 }
                 Log("generated: ");
@@ -106,7 +106,7 @@ internal static partial class Gpt2
             // do a training step
             stopwatch.Restart();
             train_loader.dataloader_next_batch();
-            Forward(&model, train_loader.inputs, train_loader.targets, B, T);
+            Forward(&model, train_loader.inputs, train_loader.targetTokenIndices, B, T);
             ZeroGrad(&model);
             Backward(&model);
             Update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, step + 1);

@@ -75,52 +75,58 @@ internal static partial class Gpt2
             stopwatch.Restart();
 
             Forward(&model, x, y, B, T);
+            double t1_ms = stopwatch.Elapsed.TotalMilliseconds;
             ZeroGrad(&model);
+            double t2_ms = stopwatch.Elapsed.TotalMilliseconds;
             Backward(&model);
-
-            double time_elapsed_s = stopwatch.Elapsed.TotalSeconds;
+            double t3_ms = stopwatch.Elapsed.TotalMilliseconds;
 
             if (step == 0)
             {
                 // error checking at step 0 for reference activations/gradients
 
                 // at this point, target should be equal to expected_logits, let's compare
-                allOk &= check_tensor(expected_logits, model.acts.logits, B * T * V, "Logits");
+                allOk &= CheckTensor(expected_logits, model.acts.logits, B * T * V, "Logits");
 
                 // finally check all the gradients
                 var gradoks = new bool[16];
                 ParameterTensors grads = model.grads;
-                gradoks[0] = check_tensor(grads.wte, expected_grads.wte, V * C, "dwte");
-                gradoks[1] = check_tensor(grads.wpe, expected_grads.wpe, maxT * C, "dwpe");
-                gradoks[2] = check_tensor(grads.ln1w, expected_grads.ln1w, L * C, "dln1w");
-                gradoks[3] = check_tensor(grads.ln1b, expected_grads.ln1b, L * C, "dln1b");
-                gradoks[4] = check_tensor(grads.qkvw, expected_grads.qkvw, L * 3 * C * C, "dqkvw");
-                gradoks[5] = check_tensor(grads.qkvb, expected_grads.qkvb, L * 3 * C, "dqkvb");
-                gradoks[6] = check_tensor(grads.attprojw, expected_grads.attprojw, L * C * C, "dattprojw");
-                gradoks[7] = check_tensor(grads.attprojb, expected_grads.attprojb, L * C, "dattprojb");
-                gradoks[8] = check_tensor(grads.ln2w, expected_grads.ln2w, L * C, "dln2w");
-                gradoks[9] = check_tensor(grads.ln2b, expected_grads.ln2b, L * C, "dln2b");
-                gradoks[10] = check_tensor(grads.fcw, expected_grads.fcw, L * 4 * C * C, "dfcw");
-                gradoks[11] = check_tensor(grads.fcb, expected_grads.fcb, L * 4 * C, "dfcb");
-                gradoks[12] = check_tensor(grads.fcprojw, expected_grads.fcprojw, L * C * 4 * C, "dfcprojw");
-                gradoks[13] = check_tensor(grads.fcprojb, expected_grads.fcprojb, L * C, "dfcprojb");
-                gradoks[14] = check_tensor(grads.lnfw, expected_grads.lnfw, C, "dlnfw");
-                gradoks[15] = check_tensor(grads.lnfb, expected_grads.lnfb, C, "dlnfb");
+                gradoks[0] = CheckTensor(grads.wte, expected_grads.wte, V * C, "dwte");
+                gradoks[1] = CheckTensor(grads.wpe, expected_grads.wpe, maxT * C, "dwpe");
+                gradoks[2] = CheckTensor(grads.ln1w, expected_grads.ln1w, L * C, "dln1w");
+                gradoks[3] = CheckTensor(grads.ln1b, expected_grads.ln1b, L * C, "dln1b");
+                gradoks[4] = CheckTensor(grads.qkvw, expected_grads.qkvw, L * 3 * C * C, "dqkvw");
+                gradoks[5] = CheckTensor(grads.qkvb, expected_grads.qkvb, L * 3 * C, "dqkvb");
+                gradoks[6] = CheckTensor(grads.attprojw, expected_grads.attprojw, L * C * C, "dattprojw");
+                gradoks[7] = CheckTensor(grads.attprojb, expected_grads.attprojb, L * C, "dattprojb");
+                gradoks[8] = CheckTensor(grads.ln2w, expected_grads.ln2w, L * C, "dln2w");
+                gradoks[9] = CheckTensor(grads.ln2b, expected_grads.ln2b, L * C, "dln2b");
+                gradoks[10] = CheckTensor(grads.fcw, expected_grads.fcw, L * 4 * C * C, "dfcw");
+                gradoks[11] = CheckTensor(grads.fcb, expected_grads.fcb, L * 4 * C, "dfcb");
+                gradoks[12] = CheckTensor(grads.fcprojw, expected_grads.fcprojw, L * C * 4 * C, "dfcprojw");
+                gradoks[13] = CheckTensor(grads.fcprojb, expected_grads.fcprojb, L * C, "dfcprojb");
+                gradoks[14] = CheckTensor(grads.lnfw, expected_grads.lnfw, C, "dlnfw");
+                gradoks[15] = CheckTensor(grads.lnfb, expected_grads.lnfb, C, "dlnfb");
                 for (int i = 0; i < 16; i++)
                 {
                     allOk = allOk && gradoks[i];
                 }
             }
 
+            double t4_ms = stopwatch.Elapsed.TotalMilliseconds;
             Update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.01f, step + 1);
+            double t5_ms = stopwatch.Elapsed.TotalMilliseconds;
+
+            // llm.c did not include Update step when copied although significant part
+            double total_ms = t3_ms + t5_ms - t4_ms;
 
             losses[step] = model.mean_loss;
             var expectedLoss = expected_losses[step];
             var lossOk = CheckLoss(model.mean_loss, expectedLoss);
             allOk = allOk && lossOk;
             // print the timing information at the end
-            Log($"step {step}: loss {model.mean_loss:F6} expected loss {expectedLoss:F6} " +
-                $"{(lossOk ? "OK" : "FAIL"),-4} (took {time_elapsed_s * 1000:F0} ms)");
+            Log($"{step,2}: loss {model.mean_loss:F6} exp. {expectedLoss:F6} " +
+                $"{(lossOk ? "OK" : "FAIL"),-4} ({total_ms,5:F0} ms = Forward {t1_ms,5:F0} ms ZeroGrad {t2_ms - t1_ms,3:F0} ms Backward {t3_ms - t2_ms,4:F0} ms Update {t5_ms - t4_ms,4:F0} ms)");
         }
 
         Log($"overall okay: {allOk}");
@@ -138,7 +144,7 @@ internal static partial class Gpt2
     static bool Check(float a, float b) => MathF.Abs(a - b) < 0.01f;
 
     // poor man's tensor checker
-    static unsafe bool check_tensor(float* actual, float* expected, int n, string label)
+    static unsafe bool CheckTensor(float* actual, float* expected, int n, string label)
     {
         const int printUpTo = 0;//5;
         LogNoNewLine($"{label,-16} ");
@@ -154,6 +160,7 @@ internal static partial class Gpt2
                 Log("");
                 LogNoNewLine($"{(isOk ? "OK  " : "FAIL")} {a,15} {e,15}");
             }
+            if (!isOk) { Debugger.Break(); }
         }
         Log($"TENSOR {(ok ? "OK  " : "FAIL")}");
         return ok;

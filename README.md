@@ -92,23 +92,41 @@
 [assembly: System.Runtime.Versioning.TargetFramework(".NETCoreApp,Version=v8.0", FrameworkDisplayName=".NET 8.0")]
 namespace nietras.LargeLanguageModel
 {
-    public static class Llm
+    public interface ILlm
     {
-        public static unsafe void AttentionBackward(float* dinp, float* dpreatt, float* datt, float* dout, float* inp, float* att, int B, int T, int C, int NH) { }
-        public static unsafe void AttentionForward(float* output, float* preatt, float* att, float* inp, int B, int T, int C, int NH) { }
-        public static unsafe void CrossEntropyForward(float* losses, float* probs, int* targets, int B, int T, int V) { }
-        public static unsafe void CrossEntropySoftmaxBackward(float* dlogits, float* dlosses, float* probs, int* targets, int B, int T, int V) { }
-        public static unsafe void EncoderBackward(float* dwte, float* dwpe, float* dout, int* inp, int B, int T, int C) { }
-        public static unsafe void EncoderForward(float* output, int* inp, float* wte, float* wpe, int B, int T, int C) { }
-        public static unsafe void GeLUBackward(float* dinp, float* inp, float* dout, int N) { }
-        public static unsafe void GeLUForward(float* output, float* inp, int N) { }
-        public static unsafe void LayerNormBackward(float* dinp, float* dweight, float* dbias, float* dout, float* inp, float* weight, float* mean, float* rstd, int B, int T, int C) { }
-        public static unsafe void LayerNormForward(float* output, float* mean, float* rstd, float* inp, float* weight, float* bias, int B, int T, int C) { }
-        public static unsafe void MatMulBackward(float* dinp, float* dweight, float* dbias, float* dout, float* inp, float* weight, int B, int T, int C, int OC) { }
-        public static unsafe void MatMulForward(float* output, float* inp, float* weight, float* bias, int B, int T, int C, int OC) { }
-        public static unsafe void ResidualBackward(float* dinp1, float* dinp2, float* dout, int N) { }
-        public static unsafe void ResidualForward(float* output, float* inp1, float* inp2, int N) { }
-        public static unsafe void SoftmaxForward(float* probs, float* logits, int B, int T, int V) { }
+        unsafe void AttentionBackward(float* δoutput, float* postAttention, float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* δpreAttention, float* δpostAttention, float* δinput);
+        unsafe void AttentionForward(float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* preAttention, float* postAttention, float* output);
+        unsafe void CrossEntropyForward(float* probabilities, int* targetTokenIndices, int batchSize, int tokenCount, int vocabularySize, float* losses);
+        unsafe void CrossEntropySoftmaxBackward(float* δlosses, float* probabilities, int* targetTokenIndices, int batchSize, int tokenCount, int vocabularySize, float* δlogits);
+        unsafe void EmbedBackward(float* δoutput, int* tokenIndices, int batchSize, int tokenCount, int channelCount, float* δtokenEmbeddings, float* δpositionEmbeddings);
+        unsafe void EmbedForward(int* tokenIndices, float* tokenEmbeddings, float* positionEmbeddings, int batchSize, int tokenCount, int channelCount, float* output);
+        unsafe void GeLUBackward(float* δoutput, float* input, int count, float* δinput);
+        unsafe void GeLUForward(float* input, int count, float* output);
+        unsafe void LayerNormBackward(float* δoutput, float* input, float* weight, float* mean, float* invStdDev, int batchSize, int tokenCount, int channelCount, float* δweight, float* δbias, float* δinput);
+        unsafe void LayerNormForward(float* input, float* weight, float* bias, int batchSize, int tokenCount, int channelCount, float* mean, float* invStdDev, float* output);
+        unsafe void MatMulBackward(float* δoutput, float* input, float* weight, int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount, float* δweight, float* δbias, float* δinput);
+        unsafe void MatMulForward(float* input, float* weight, float* bias, int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount, float* output);
+        unsafe void ResidualBackward(float* δoutput, int count, float* δleft, float* δright);
+        unsafe void ResidualForward(float* left, float* right, int count, float* output);
+        unsafe void SoftmaxForward(float* logits, int batchSize, int tokenCount, int vocabularySize, float* probabilities);
+    }
+    public class Llm : nietras.LargeLanguageModel.ILlm
+    {
+        public static unsafe void AttentionBackward(float* δoutput, float* postAttention, float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* δpreAttention, float* δpostAttention, float* δinput) { }
+        public static unsafe void AttentionForward(float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* preAttention, float* postAttention, float* output) { }
+        public static unsafe void CrossEntropyForward(float* probabilities, int* targetTokenIndices, int batchSize, int tokenCount, int vocabularySize, float* losses) { }
+        public static unsafe void CrossEntropySoftmaxBackward(float* δlosses, float* probabilities, int* targetTokenIndices, int batchSize, int tokenCount, int vocabularySize, float* δlogits) { }
+        public static unsafe void EmbedBackward(float* δoutput, int* tokenIndices, int batchSize, int tokenCount, int channelCount, float* δtokenEmbeddings, float* δpositionEmbeddings) { }
+        public static unsafe void EmbedForward(int* tokenIndices, float* tokenEmbeddings, float* positionEmbeddings, int batchSize, int tokenCount, int channelCount, float* output) { }
+        public static unsafe void GeLUBackward(float* δoutput, float* input, int count, float* δinput) { }
+        public static unsafe void GeLUForward(float* input, int count, float* output) { }
+        public static unsafe void LayerNormBackward(float* δoutput, float* input, float* weight, float* mean, float* invStdDev, int batchSize, int tokenCount, int channelCount, float* δweight, float* δbias, float* δinput) { }
+        public static unsafe void LayerNormForward(float* input, float* weight, float* bias, int batchSize, int tokenCount, int channelCount, float* mean, float* invStdDev, float* output) { }
+        public static unsafe void MatMulBackward(float* δoutput, float* input, float* weight, int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount, float* δweight, float* δbias, float* δinput) { }
+        public static unsafe void MatMulForward(float* input, float* weight, float* bias, int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount, float* output) { }
+        public static unsafe void ResidualBackward(float* δoutput, int count, float* δleft, float* δright) { }
+        public static unsafe void ResidualForward(float* left, float* right, int count, float* output) { }
+        public static unsafe void SoftmaxForward(float* logits, int batchSize, int tokenCount, int vocabularySize, float* probabilities) { }
     }
 }
 ```

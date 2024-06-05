@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using static nietras.LargeLanguageModel.Llm;
 
@@ -100,7 +102,7 @@ internal static partial class Gpt2
         public float* lnf_mean; // (B, T)
         public float* lnf_rstd; // (B, T)
         public float* logits; // (B, T, V)
-        public float* probs; // (B, T, V)
+        public float* probabilities; // (B, T, V)
         public float* losses; // (B, T)
     }
 
@@ -134,7 +136,7 @@ internal static partial class Gpt2
             &acts->lnf_mean,
             &acts->lnf_rstd,
             &acts->logits,
-            &acts->probs,
+            &acts->probabilities,
             &acts->losses
     ];
         float* acts_memory_iterator = acts_memory;
@@ -181,8 +183,8 @@ internal static partial class Gpt2
         public int batch_size; // the batch size (B) of current forward pass
         public int seq_len; // the sequence length (T) of current forward pass
         public int* inputs; // the input tokens for the current forward pass
-        public int* targets; // the target tokens for the current forward pass
-        public float mean_loss; // after a forward pass with targets, will be populated with the mean loss
+        public int* targetTokenIndices; // the target tokens for the current forward pass
+        public float mean_loss; // after a forward pass with targetTokenIndices, will be populated with the mean loss
     }
 
     public unsafe static void BuildFromCheckpoint(GPT2* model, string checkpoint_path)
@@ -248,15 +250,15 @@ internal static partial class Gpt2
         model->v_memory = null;
         model->grads_acts_memory = null;
         model->inputs = null;
-        model->targets = null;
+        model->targetTokenIndices = null;
         model->batch_size = 0;
         model->seq_len = 0;
         model->mean_loss = -1.0f; // -1.0f will designate no loss
     }
 
-    static unsafe void Forward(GPT2* model, int* inputs, int* targets, int B, int T)
+    static unsafe void Forward(GPT2* model, int* inputs, int* targetTokenIndices, int B, int T)
     {
-        // targets are optional and could be null
+        // targetTokenIndices are optional and could be null
 
         // ensure the model was initialized or error output
         if (model->params_memory == null)
@@ -298,7 +300,7 @@ internal static partial class Gpt2
             model->act_sizes[18] = B * T; // lnf_mean
             model->act_sizes[19] = B * T; // lnf_rstd
             model->act_sizes[20] = B * T * V; // logits
-            model->act_sizes[21] = B * T * V; // probs
+            model->act_sizes[21] = B * T * V; // probabilities
             model->act_sizes[22] = B * T; // losses
             long num_activations = 0;
             for (long i = 0; i < NUM_ACTIVATION_TENSORS; i++)
@@ -308,9 +310,9 @@ internal static partial class Gpt2
             Log($"num_activations: {num_activations}");
             model->num_activations = num_activations;
             model->acts_memory = AllocateAndPointActivations(&model->acts, model->act_sizes);
-            // also create memory for caching inputs and targets
+            // also create memory for caching inputs and targetTokenIndices
             model->inputs = malloc<int>(B * T);
-            model->targets = malloc<int>(B * T); // might be unused if we never have targets but it's small
+            model->targetTokenIndices = malloc<int>(B * T); // might be unused if we never have targetTokenIndices but it's small
         }
         else
         {
@@ -323,18 +325,18 @@ internal static partial class Gpt2
             }
         }
 
-        // cache the inputs/targets
+        // cache the inputs/targetTokenIndices
         memcpy(model->inputs, inputs, B * T);
-        if (targets != null)
+        if (targetTokenIndices != null)
         {
-            memcpy(model->targets, targets, B * T);
+            memcpy(model->targetTokenIndices, targetTokenIndices, B * T);
         }
 
         // forward pass
         ParameterTensors parameters = model->parameters; // for brevity
         ActivationTensors acts = model->acts;
         float* residual;
-        EncoderForward(acts.encoded, inputs, parameters.wte, parameters.wpe, B, T, C); // encoding goes into residual[0]
+        EmbedForward(inputs, parameters.wte, parameters.wpe, B, T, C, acts.encoded); // encoding goes into residual[0]
         for (int l = 0; l < L; l++)
         {
 
@@ -373,26 +375,26 @@ internal static partial class Gpt2
             float* l_residual3 = acts.residual3 + l * B * T * C;
 
             // now do the forward pass
-            LayerNormForward(l_ln1, l_ln1_mean, l_ln1_rstd, residual, l_ln1w, l_ln1b, B, T, C);
-            MatMulForward(l_qkv, l_ln1, l_qkvw, l_qkvb, B, T, C, 3 * C);
-            AttentionForward(l_atty, l_preatt, l_att, l_qkv, B, T, C, NH);
-            MatMulForward(l_attproj, l_atty, l_attprojw, l_attprojb, B, T, C, C);
-            ResidualForward(l_residual2, residual, l_attproj, B * T * C);
-            LayerNormForward(l_ln2, l_ln2_mean, l_ln2_rstd, l_residual2, l_ln2w, l_ln2b, B, T, C);
-            MatMulForward(l_fch, l_ln2, l_fcw, l_fcb, B, T, C, 4 * C);
-            GeLUForward(l_fch_gelu, l_fch, B * T * 4 * C);
-            MatMulForward(l_fcproj, l_fch_gelu, l_fcprojw, l_fcprojb, B, T, 4 * C, C);
-            ResidualForward(l_residual3, l_residual2, l_fcproj, B * T * C);
+            LayerNormForward(residual, l_ln1w, l_ln1b, B, T, C, l_ln1_mean, l_ln1_rstd, l_ln1);
+            MatMulForward(l_ln1, l_qkvw, l_qkvb, B, T, C, 3 * C, l_qkv);
+            AttentionForward(l_qkv, B, T, C, NH, l_preatt, l_att, l_atty);
+            MatMulForward(l_atty, l_attprojw, l_attprojb, B, T, C, C, l_attproj);
+            ResidualForward(residual, l_attproj, B * T * C, l_residual2);
+            LayerNormForward(l_residual2, l_ln2w, l_ln2b, B, T, C, l_ln2_mean, l_ln2_rstd, l_ln2);
+            MatMulForward(l_ln2, l_fcw, l_fcb, B, T, C, 4 * C, l_fch);
+            GeLUForward(l_fch, B * T * 4 * C, l_fch_gelu);
+            MatMulForward(l_fch_gelu, l_fcprojw, l_fcprojb, B, T, 4 * C, C, l_fcproj);
+            ResidualForward(l_residual2, l_fcproj, B * T * C, l_residual3);
         }
         residual = acts.residual3 + (L - 1) * B * T * C; // last residual is in residual3
-        LayerNormForward(acts.lnf, acts.lnf_mean, acts.lnf_rstd, residual, parameters.lnfw, parameters.lnfb, B, T, C);
-        MatMulForward(acts.logits, acts.lnf, parameters.wte, null, B, T, C, V);
-        SoftmaxForward(acts.probs, acts.logits, B, T, V);
+        LayerNormForward(residual, parameters.lnfw, parameters.lnfb, B, T, C, acts.lnf_mean, acts.lnf_rstd, acts.lnf);
+        MatMulForward(acts.lnf, parameters.wte, null, B, T, C, V, acts.logits);
+        SoftmaxForward(acts.logits, B, T, V, acts.probabilities);
 
-        // also forward the cross-entropy loss function if we have the targets
-        if (targets != null)
+        // also forward the cross-entropy loss function if we have the targetTokenIndices
+        if (targetTokenIndices != null)
         {
-            CrossEntropyForward(model->acts.losses, model->acts.probs, targets, B, T, V);
+            CrossEntropyForward(model->acts.probabilities, targetTokenIndices, B, T, V, model->acts.losses);
             // for convenience also evaluate the mean loss
             float mean_loss = 0.0f;
             for (int i = 0; i < B * T; i++) { mean_loss += model->acts.losses[i]; }
@@ -401,7 +403,7 @@ internal static partial class Gpt2
         }
         else
         {
-            // if we don't have targets, we don't have a loss
+            // if we don't have targetTokenIndices, we don't have a loss
             model->mean_loss = -1.0f;
         }
     }
@@ -415,10 +417,10 @@ internal static partial class Gpt2
     static unsafe void Backward(GPT2* model)
     {
 
-        // double check we forwarded previously, with targets
+        // double check we forwarded previously, with targetTokenIndices
         if (model->mean_loss == -1.0f)
         {
-            throw new InvalidOperationException("Error: must forward with targets before backward");
+            throw new InvalidOperationException("Error: must forward with targetTokenIndices before backward");
         }
 
         // lazily allocate the memory for gradients of the weights and activations, if needed
@@ -449,11 +451,11 @@ internal static partial class Gpt2
         float dloss_mean = 1.0f / (B * T);
         for (int i = 0; i < B * T; i++) { grads_acts.losses[i] = dloss_mean; }
 
-        CrossEntropySoftmaxBackward(grads_acts.logits, grads_acts.losses, acts.probs, model->targets, B, T, V);
-        MatMulBackward(grads_acts.lnf, grads.wte, null, grads_acts.logits, acts.lnf, parameters.wte, B, T, C, V);
+        CrossEntropySoftmaxBackward(grads_acts.losses, acts.probabilities, model->targetTokenIndices, B, T, V, grads_acts.logits);
+        MatMulBackward(grads_acts.logits, acts.lnf, parameters.wte, B, T, C, V, grads.wte, null, grads_acts.lnf);
         float* residual = acts.residual3 + (L - 1) * B * T * C; // last layer's residual
         float* dresidual = grads_acts.residual3 + (L - 1) * B * T * C; // write to last layer's residual
-        LayerNormBackward(dresidual, grads.lnfw, grads.lnfb, grads_acts.lnf, residual, parameters.lnfw, acts.lnf_mean, acts.lnf_rstd, B, T, C);
+        LayerNormBackward(grads_acts.lnf, residual, parameters.lnfw, acts.lnf_mean, acts.lnf_rstd, B, T, C, grads.lnfw, grads.lnfb, dresidual);
 
         for (int l = L - 1; l >= 0; l--)
         {
@@ -509,21 +511,21 @@ internal static partial class Gpt2
             float* dl_residual3 = grads_acts.residual3 + l * B * T * C;
 
             // backprop this layer
-            ResidualBackward(dl_residual2, dl_fcproj, dl_residual3, B * T * C);
-            MatMulBackward(dl_fch_gelu, dl_fcprojw, dl_fcprojb, dl_fcproj, l_fch_gelu, l_fcprojw, B, T, 4 * C, C);
-            GeLUBackward(dl_fch, l_fch, dl_fch_gelu, B * T * 4 * C);
-            MatMulBackward(dl_ln2, dl_fcw, dl_fcb, dl_fch, l_ln2, l_fcw, B, T, C, 4 * C);
-            LayerNormBackward(dl_residual2, dl_ln2w, dl_ln2b, dl_ln2, l_residual2, l_ln2w, l_ln2_mean, l_ln2_rstd, B, T, C);
-            ResidualBackward(dresidual, dl_attproj, dl_residual2, B * T * C);
-            MatMulBackward(dl_atty, dl_attprojw, dl_attprojb, dl_attproj, l_atty, l_attprojw, B, T, C, C);
-            AttentionBackward(dl_qkv, dl_preatt, dl_att, dl_atty, l_qkv, l_att, B, T, C, NH);
-            MatMulBackward(dl_ln1, dl_qkvw, dl_qkvb, dl_qkv, l_ln1, l_qkvw, B, T, C, 3 * C);
-            LayerNormBackward(dresidual, dl_ln1w, dl_ln1b, dl_ln1, residual, l_ln1w, l_ln1_mean, l_ln1_rstd, B, T, C);
+            ResidualBackward(dl_residual3, B * T * C, dl_residual2, dl_fcproj);
+            MatMulBackward(dl_fcproj, l_fch_gelu, l_fcprojw, B, T, 4 * C, C, dl_fcprojw, dl_fcprojb, dl_fch_gelu);
+            GeLUBackward(dl_fch_gelu, l_fch, B * T * 4 * C, dl_fch);
+            MatMulBackward(dl_fch, l_ln2, l_fcw, B, T, C, 4 * C, dl_fcw, dl_fcb, dl_ln2);
+            LayerNormBackward(dl_ln2, l_residual2, l_ln2w, l_ln2_mean, l_ln2_rstd, B, T, C, dl_ln2w, dl_ln2b, dl_residual2);
+            ResidualBackward(dl_residual2, B * T * C, dresidual, dl_attproj);
+            MatMulBackward(dl_attproj, l_atty, l_attprojw, B, T, C, C, dl_attprojw, dl_attprojb, dl_atty);
+            AttentionBackward(dl_atty, l_att, l_qkv, B, T, C, NH, dl_preatt, dl_att, dl_qkv);
+            MatMulBackward(dl_qkv, l_ln1, l_qkvw, B, T, C, 3 * C, dl_qkvw, dl_qkvb, dl_ln1);
+            LayerNormBackward(dl_ln1, residual, l_ln1w, l_ln1_mean, l_ln1_rstd, B, T, C, dl_ln1w, dl_ln1b, dresidual);
         }
-        EncoderBackward(grads.wte, grads.wpe, grads_acts.encoded, model->inputs, B, T, C);
+        EmbedBackward(grads_acts.encoded, model->inputs, B, T, C, grads.wte, grads.wpe);
     }
 
-    static unsafe void Update(GPT2* model, float learning_rate, float beta1, float beta2, float eps, float weight_decay, int t)
+    static unsafe void Update(GPT2* model, float learningRate, float beta1, float beta2, float eps, float weightDecay, int t)
     {
         // reference: https://pytorch.org/docs/stable/generated/torch.optim.AdamW.html
 
@@ -533,24 +535,93 @@ internal static partial class Gpt2
             model->m_memory = calloc<float>(model->num_parameters);
             model->v_memory = calloc<float>(model->num_parameters);
         }
+        var parameters = model->params_memory;
+        var gradients = model->grads_memory;
+        var ms = model->m_memory;
+        var vs = model->v_memory;
+        var parameterCount = model->num_parameters;
 
-        for (int i = 0; i < model->num_parameters; i++)
+        var invOneMinusDecayBeta1 = 1.0f / (1.0f - MathF.Pow(beta1, t));
+        var invOneMinusDecayBeta2 = 1.0f / (1.0f - MathF.Pow(beta2, t));
+
+        var start = 0L;
+        var end = parameterCount;
+        AdamWUpdateImpl(parameters, gradients, learningRate, beta1, beta2, eps,
+            weightDecay, invOneMinusDecayBeta1, invOneMinusDecayBeta2,
+            ms, vs, start, end);
+
+        //var partitioner = Partitioner.Create(0, parameterCount, 1024 * 1024);
+        //Parallel.ForEach(partitioner, (range) =>
+        //{
+        //    var start = range.Item1;
+        //    var end = range.Item2;
+        //    AdamWUpdateImpl(parameters, gradients, learningRate, beta1, beta2, eps,
+        //        weightDecay, invOneMinusDecayBeta1, invOneMinusDecayBeta2,
+        //        ms, vs, start, end);
+        //});
+
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        static unsafe void AdamWUpdateImpl(float* parameters, float* gradients,
+            float learningRate, float beta1, float beta2, float eps, float weightDecay,
+            float invOneMinusDecayBeta1, float invOneMinusDecayBeta2,
+            float* ms, float* vs, long start, long end)
         {
-            float param = model->params_memory[i];
-            float grad = model->grads_memory[i];
+            var beta1Vector = new Vector<float>(beta1);
+            var beta2Vector = new Vector<float>(beta2);
+            var oneMinusBeta1Vector = new Vector<float>(1.0f - beta1);
+            var oneMinusBeta2Vector = new Vector<float>(1.0f - beta2);
+            var epsVector = new Vector<float>(eps);
+            var learningRateVector = new Vector<float>(learningRate);
+            var weightDecayVector = new Vector<float>(weightDecay);
+            var invOneMinusDecayBeta1Vector = new Vector<float>(invOneMinusDecayBeta1);
+            var invOneMinusDecayBeta2Vector = new Vector<float>(invOneMinusDecayBeta2);
 
-            // update the first moment (momentum)
-            float m = beta1 * model->m_memory[i] + (1.0f - beta1) * grad;
-            // update the second moment (RMSprop)
-            float v = beta2 * model->v_memory[i] + (1.0f - beta2) * grad * grad;
-            // bias-correct both moments
-            float m_hat = m / (1.0f - MathF.Pow(beta1, t));
-            float v_hat = v / (1.0f - MathF.Pow(beta2, t));
+            long i = start;
 
-            // update
-            model->m_memory[i] = m;
-            model->v_memory[i] = v;
-            model->params_memory[i] -= learning_rate * (m_hat / (MathF.Sqrt(v_hat) + eps) + weight_decay * param);
+            for (; i < (end - Vector<float>.Count); i += Vector<float>.Count)
+            {
+                var paramVector = Vector.Load(parameters + i);
+                var gradVector = Vector.Load(gradients + i);
+                var mVector = Vector.Load(ms + i);
+                var vVector = Vector.Load(vs + i);
+
+                // update the first moment (momentum)
+                var m = beta1Vector * mVector + oneMinusBeta1Vector * gradVector;
+                // update the second moment (RMSprop)
+                var v = beta2Vector * vVector + oneMinusBeta2Vector * gradVector * gradVector;
+                // bias-correct both moments
+                var mHat = m * invOneMinusDecayBeta1Vector;
+                var vHat = v * invOneMinusDecayBeta2Vector;
+
+                // update
+                paramVector -= learningRateVector *
+                    (mHat / (Vector.SquareRoot(vHat) + epsVector) +
+                     weightDecayVector * paramVector);
+
+                Vector.Store(m, ms + i);
+                Vector.Store(v, vs + i);
+                Vector.Store(paramVector, parameters + i);
+            }
+            for (; i < end; i++)
+            {
+                var param = parameters[i];
+                var grad = gradients[i];
+
+                // update the first moment (momentum)
+                var m = beta1 * ms[i] + (1.0f - beta1) * grad;
+                // update the second moment (RMSprop)
+                var v = beta2 * vs[i] + (1.0f - beta2) * grad * grad;
+                // bias-correct both moments
+                var mHat = m * invOneMinusDecayBeta1;
+                var vHat = v * invOneMinusDecayBeta2;
+
+                // update
+                ms[i] = m;
+                vs[i] = v;
+                parameters[i] -= learningRate *
+                    (mHat / (MathF.Sqrt(vHat) + eps) +
+                     weightDecay * param);
+            }
         }
     }
 
@@ -563,7 +634,7 @@ internal static partial class Gpt2
         free(model->acts_memory);
         free(model->grads_acts_memory);
         free(model->inputs);
-        free(model->targets);
+        free(model->targetTokenIndices);
     }
 
     // ----------------------------------------------------------------------------
@@ -582,7 +653,7 @@ internal static partial class Gpt2
         // output memory
         public int* batch;
         public int* inputs;
-        public int* targets;
+        public int* targetTokenIndices;
         // convenience variables
         public long num_batches;
         bool _disposedValue;
@@ -600,10 +671,10 @@ internal static partial class Gpt2
                 throw new InvalidDataException($"Error: file size is too small for the batch size and sequence length");
             }
 
-            // allocate space for B*T + 1 integers to store the inputs and targets
+            // allocate space for B*T + 1 integers to store the inputs and targetTokenIndices
             this.batch = malloc<int>((B * T + 1));
             this.inputs = this.batch;
-            this.targets = this.batch + 1; // targets are shifted by one
+            this.targetTokenIndices = this.batch + 1; // targetTokenIndices are shifted by one
             this.num_batches = this.file_size / (B * T * sizeof(int));
         }
 
