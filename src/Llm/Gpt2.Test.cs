@@ -140,8 +140,9 @@ internal static partial class Gpt2
         Free(&model);
     }
 
+    const float CheckDiffLimit = 0.01f;
     static bool CheckLoss(float a, float b) => Check(a, b);
-    static bool Check(float a, float b) => MathF.Abs(a - b) < 0.01f;
+    static bool Check(float a, float b) => MathF.Abs(a - b) < CheckDiffLimit;
 
     // poor man's tensor checker
     static unsafe bool CheckTensor(float* actual, float* expected, int n, string label)
@@ -149,20 +150,25 @@ internal static partial class Gpt2
         const int printUpTo = 0;//5;
         LogNoNewLine($"{label,-16} ");
         bool ok = true;
+        var maxAbsDiff = 0f;
         for (int i = 0; i < n; i++)
         {
             var a = actual[i];
             var e = expected[i];
-            var isOk = Check(a, e);
+
+            var absDiff = MathF.Abs(a - e);
+            maxAbsDiff = MathF.Max(absDiff, maxAbsDiff);
+
+            var isOk = absDiff < CheckDiffLimit;
             ok &= isOk;
             if (i < printUpTo)
             {
                 Log("");
-                LogNoNewLine($"{(isOk ? "OK  " : "FAIL")} {a,15} {e,15}");
+                LogNoNewLine($"{(isOk ? "OK  " : "FAIL")} {a,15} {e,15} {absDiff,15}");
             }
             if (!isOk) { Debugger.Break(); }
         }
-        Log($"TENSOR {(ok ? "OK  " : "FAIL")}");
+        Log($"TENSOR {(ok ? "OK  " : "FAIL")} MaxAbsDiff {maxAbsDiff,8:F6}");
         return ok;
     }
 }
