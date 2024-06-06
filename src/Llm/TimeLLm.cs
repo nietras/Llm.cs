@@ -1,11 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 
 namespace nietras.LargeLanguageModel;
 
-public unsafe class TimeLlm<TLlm>
+internal unsafe class TimeLlm<TLlm>
     where TLlm : ILlm
 {
     readonly SortedDictionary<TimeKey, List<long>> _keyToTimes = [];
@@ -13,7 +14,7 @@ public unsafe class TimeLlm<TLlm>
     public string Part { get; set; } = string.Empty;
     public int Index { get; set; } = -1;
 
-    Timer NewTimer([CallerMemberName] string callerMemberName = "") =>
+    public Timer NewTimer([CallerMemberName] string callerMemberName = "") =>
         new(this, callerMemberName);
 
     public void EmbedForward(
@@ -131,7 +132,6 @@ public unsafe class TimeLlm<TLlm>
         TLlm.CrossEntropySoftmaxBackward(δlosses, probabilities, targetTokenIndices, batchSize, tokenCount, vocabularySize, δlogits);
     }
 
-
     public void AdamW(
         float* gradients, float* ms, float* vs, float* parameters,
         long parameterCount, float learningRate,
@@ -139,6 +139,51 @@ public unsafe class TimeLlm<TLlm>
     {
         using var _ = NewTimer();
         TLlm.AdamW(gradients, ms, vs, parameters, parameterCount, learningRate, beta1, beta2, eps, weightDecay, t);
+    }
+
+    public void Zero(float* output, long count)
+    {
+        using var _ = NewTimer();
+        Gpt2.memset(output, count);
+    }
+
+    internal void Trace(Action<string> log)
+    {
+        var keyToStats = _keyToTimes.ToDictionary(p => p.Key, p => ComputeStats(p.Value));
+        var totalSum_ms = keyToStats.Values.Sum(s => s.Sum_ms);
+
+        var part = string.Empty;
+        foreach (var (key, times) in _keyToTimes)
+        {
+            if (part != key.Part) { log(string.Empty); }
+            part = key.Part;
+
+            var s = ComputeStats(times);
+
+            log($"{key.Part,-10} {key.Index:D2} {key.CallerMemberName,-27} " +
+                $"{s.Sum_ms / totalSum_ms,3:P0} count: {s.Count,3} sum: {s.Sum_ms,6:F1} " +
+                $"min: {s.Min_ms,5:F1} mean: {s.Mean_ms,5:F1} max: {s.Max_ms,5:F1} [ms]");
+        }
+    }
+
+    static TimeStats ComputeStats(List<long> times)
+    {
+        var min = long.MaxValue;
+        var max = long.MinValue;
+        long sum = 0;
+        foreach (var time in times)
+        {
+            min = Math.Min(min, time);
+            max = Math.Max(max, time);
+            sum += time;
+        }
+        var mean = sum / (double)times.Count;
+        var toMs = 1000.0 / Stopwatch.Frequency;
+        var sum_ms = sum * toMs;
+        var min_ms = min * toMs;
+        var mean_ms = mean * toMs;
+        var max_ms = max * toMs;
+        return new(times.Count, sum_ms, min_ms, mean_ms, max_ms);
     }
 
     readonly record struct TimeKey(string Part, int Index, string CallerMemberName)
@@ -152,7 +197,10 @@ public unsafe class TimeLlm<TLlm>
         }
     }
 
-    readonly ref struct Timer
+    readonly record struct TimeStats(int Count, double Sum_ms,
+        double Min_ms, double Mean_ms, double Max_ms);
+
+    internal readonly ref struct Timer
     {
         readonly TimeLlm<TLlm> _llm;
         readonly string _callerMemberName;
@@ -174,6 +222,7 @@ public unsafe class TimeLlm<TLlm>
             if (!_llm._keyToTimes.TryGetValue(key, out var times))
             {
                 times = [];
+                _llm._keyToTimes.Add(key, times);
             }
             times.Add(time);
         }

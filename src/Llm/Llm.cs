@@ -11,7 +11,7 @@ namespace nietras.LargeLanguageModel;
 
 // all the individual layers' forward and backward passes
 // batchSize = B, tokenCount = T, channelCount = C, vocabularySize = V
-public partial class Llm : ILlm
+public unsafe partial class Llm : ILlm
 {
     // Order of method parameters:
     // * Source memory
