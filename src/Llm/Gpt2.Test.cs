@@ -68,17 +68,19 @@ internal static partial class Gpt2
         bool allOk = true;
 
         // let's do 10 training iterations, following the pytorch code
-        float* losses = stackalloc float[10];
+        const int steps = 10;
+        float* losses = stackalloc float[steps];
         var stopwatch = new Stopwatch();
-        for (int step = 0; step < 10; step++)
+        var llm = new TimeLlm<Llm>();
+        for (int step = 0; step < steps; step++)
         {
             stopwatch.Restart();
 
-            Forward(&model, x, y, B, T);
+            Forward(&model, x, y, B, T, llm);
             double t1_ms = stopwatch.Elapsed.TotalMilliseconds;
-            ZeroGrad(&model);
+            ZeroGrad(&model, llm);
             double t2_ms = stopwatch.Elapsed.TotalMilliseconds;
-            Backward(&model);
+            Backward(&model, llm);
             double t3_ms = stopwatch.Elapsed.TotalMilliseconds;
 
             if (step == 0)
@@ -114,10 +116,10 @@ internal static partial class Gpt2
             }
 
             double t4_ms = stopwatch.Elapsed.TotalMilliseconds;
-            Update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.01f, step + 1);
+            Update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.01f, step + 1, llm);
             double t5_ms = stopwatch.Elapsed.TotalMilliseconds;
 
-            // llm.c did not include Update step when copied although significant part
+            // llm.c did not include Update step when copied although significant phase
             double total_ms = t3_ms + t5_ms - t4_ms;
 
             losses[step] = model.mean_loss;
@@ -128,8 +130,9 @@ internal static partial class Gpt2
             Log($"{step,2}: loss {model.mean_loss:F6} exp. {expectedLoss:F6} " +
                 $"{(lossOk ? "OK" : "FAIL"),-4} ({total_ms,5:F0} ms = Forward {t1_ms,5:F0} ms ZeroGrad {t2_ms - t1_ms,3:F0} ms Backward {t3_ms - t2_ms,4:F0} ms Update {t5_ms - t4_ms,4:F0} ms)");
         }
-
         Log($"overall okay: {allOk}");
+
+        llm.Trace(Log);
 
         // free everything
         free(x);
