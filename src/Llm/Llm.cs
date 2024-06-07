@@ -13,20 +13,6 @@ namespace nietras.LargeLanguageModel;
 // batchSize = B, tokenCount = T, channelCount = C, vocabularySize = V
 public unsafe class Llm : ILlm
 {
-    // Order of method parameters:
-    // * Source memory
-    // * Arguments
-    // * Destination memory
-
-    // δ (greek small letter delta) used for naming gradients/derivatives.
-    // Perhaps nabla or math delta would be better but not allowed in C#
-    // identifier. This is a trial, might be worst idea ever.
-
-    // Calling this "Encoder" is confusing as sounds like the entire other phase
-    // of transformer architecture so renamed to "Embed".
-
-    internal Llm() { }
-
     public void EmbedForward(
         // [batchSize, tokenCount], [vocabularySize, channelCount], [maxTokenCount, channelCount]
         int* tokenIndices, float* tokenEmbeddings, float* positionEmbeddings,

@@ -1,5 +1,14 @@
 ﻿namespace nietras.LargeLanguageModel;
 
+// Order of method parameters:
+// * Source memory
+// * Arguments
+// * Destination memory
+//
+// δ (greek small letter delta) used for naming gradients/derivatives.
+// Perhaps nabla or math delta would be better but not allowed in C#
+// identifier. This is a trial, might be worst idea ever.
+
 public unsafe interface ILlm
 {
     /// <summary>
