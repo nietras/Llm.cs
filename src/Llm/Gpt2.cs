@@ -12,6 +12,9 @@ internal static partial class Gpt2
     static readonly Action<string> Log = t => { Console.WriteLine(t); Trace.WriteLine(t); };
     static readonly Action<string> LogNoNewLine = t => { Console.Write(t); Trace.Write(t); };
 
+    // Default implementation of LLM methods
+    static TimeLlm CreateLlm() => new(new Llm_nietras());
+
     // ----------------------------------------------------------------------------
     // GPT-2 model definition
 

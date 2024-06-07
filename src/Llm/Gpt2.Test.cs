@@ -71,7 +71,7 @@ internal static partial class Gpt2
         const int steps = 5;
         float* losses = stackalloc float[steps];
         var stopwatch = new Stopwatch();
-        var llm = new TimeLlm(new Llm());
+        var llm = CreateLlm();
         for (int step = 0; step < steps; step++)
         {
             stopwatch.Restart();

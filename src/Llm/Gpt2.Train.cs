@@ -63,7 +63,7 @@ internal static partial class Gpt2
 
         // train
         var stopwatch = new Stopwatch();
-        var llm = new TimeLlm(new Llm());
+        var llm = CreateLlm();
         for (int step = 0; step <= 20; step++)
         {
 
