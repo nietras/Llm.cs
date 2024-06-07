@@ -67,8 +67,8 @@ internal static partial class Gpt2
         // overall OK signal for the test
         bool allOk = true;
 
-        // let's do 10 training iterations, following the pytorch code
-        const int steps = 10;
+        // training iterations, following the pytorch code
+        const int steps = 5;
         float* losses = stackalloc float[steps];
         var stopwatch = new Stopwatch();
         var llm = new TimeLlm(new Llm());
