@@ -12,7 +12,7 @@ namespace nietras.LargeLanguageModel;
 // batchSize = B, tokenCount = T, channelCount = C, vocabularySize = V
 public unsafe class Llm : ILlm
 {
-    public void EmbedForward(
+    public virtual void EmbedForward(
         // [batchSize, tokenCount], [vocabularySize, channelCount], [maxTokenCount, channelCount]
         int* tokenIndices, float* tokenEmbeddings, float* positionEmbeddings,
         int batchSize, int tokenCount, int channelCount,
@@ -40,7 +40,7 @@ public unsafe class Llm : ILlm
         }
     }
 
-    public void EmbedBackward(
+    public virtual void EmbedBackward(
         // [batchSize, tokenCount, channelCount], [batchSize, tokenCount]
         float* δoutput, int* tokenIndices,
         int batchSize, int tokenCount, int channelCount,
@@ -65,7 +65,7 @@ public unsafe class Llm : ILlm
         }
     }
 
-    public void LayerNormForward(
+    public virtual void LayerNormForward(
         // [batchSize, tokenCount, channelCount], [channelCount], [channelCount]
         float* input, float* weight, float* bias,
         int batchSize, int tokenCount, int channelCount,
@@ -120,7 +120,7 @@ public unsafe class Llm : ILlm
         }
     }
 
-    public void LayerNormBackward(
+    public virtual void LayerNormBackward(
         // [batchSize, tokenCount, channelCount], [batchSize, tokenCount, channelCount], [channelCount]
         float* δoutput, float* input, float* weight,
         // [batchSize, tokenCount], [batchSize, tokenCount]
@@ -170,7 +170,7 @@ public unsafe class Llm : ILlm
         }
     }
 
-    public void MatMulForward(
+    public virtual void MatMulForward(
         // [batchSize, tokenCount, inputChannelCount], [outputChannelCount, inputChannelCount], [outputChannelCount]
         float* input, float* weight, float* bias,
         int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount,
@@ -210,7 +210,7 @@ public unsafe class Llm : ILlm
         }
     }
 
-    public void MatMulBackward(
+    public virtual void MatMulBackward(
         // [batchSize, tokenCount, outputChannelCount], [batchSize, tokenCount, inputChannelCount], [outputChannelCount, inputChannelCount]
         float* δoutput, float* input, float* weight,
         int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount,
@@ -286,7 +286,7 @@ public unsafe class Llm : ILlm
         }
     }
 
-    public void AttentionForward(
+    public virtual void AttentionForward(
         // [batchSize, tokenCount, 3 * channelCount (query Q, key K, value V)]
         float* input,
         int batchSize, int tokenCount, int channelCount, int headCount,
@@ -407,7 +407,7 @@ public unsafe class Llm : ILlm
         }
     }
 
-    public void AttentionBackward(
+    public virtual void AttentionBackward(
         // [batchSize, tokenCount, channelCount], [batchSize, headCount, tokenCount, tokenCount], [batchSize, tokenCount, 3 * channelCount (Q, K, V)]
         float* δoutput, float* postAttention, float* input,
         int batchSize, int tokenCount, int channelCount, int headCount,
@@ -500,7 +500,7 @@ public unsafe class Llm : ILlm
 
     static readonly float GeluScalingFactor = MathF.Sqrt(2.0f / MathF.PI);
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public void GeLUForward(float* input, int count, float* output)
+    public virtual void GeLUForward(float* input, int count, float* output)
     {
         for (int i = 0; i < count; i++)
         {
@@ -511,7 +511,7 @@ public unsafe class Llm : ILlm
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public void GeLUBackward(
+    public virtual void GeLUBackward(
         float* δoutput, float* input,
         int count, float* δinput)
     {
@@ -536,7 +536,7 @@ public unsafe class Llm : ILlm
         }
     }
 
-    public void ResidualForward(
+    public virtual void ResidualForward(
         float* left, float* right, int count, float* output)
     {
         for (int i = 0; i < count; i++)
@@ -545,7 +545,7 @@ public unsafe class Llm : ILlm
         }
     }
 
-    public void ResidualBackward(
+    public virtual void ResidualBackward(
         float* δoutput, int count, float* δleft, float* δright)
     {
         // δleft/δright are same so seems redundant but leave as is for now
@@ -556,7 +556,7 @@ public unsafe class Llm : ILlm
         }
     }
 
-    public void SoftmaxForward(
+    public virtual void SoftmaxForward(
         // [batchSize, tokenCount, vocabularySize]
         float* logits,
         int batchSize, int tokenCount, int vocabularySize,
@@ -592,7 +592,7 @@ public unsafe class Llm : ILlm
         });
     }
 
-    public void CrossEntropyForward(
+    public virtual void CrossEntropyForward(
         // [batchSize, tokenCount, vocabularySize], [batchSize, tokenCount]
         float* probabilities, int* targetTokenIndices,
         int batchSize, int tokenCount, int vocabularySize,
@@ -613,7 +613,7 @@ public unsafe class Llm : ILlm
         }
     }
 
-    public void CrossEntropySoftmaxBackward(
+    public virtual void CrossEntropySoftmaxBackward(
         // [batchSize, tokenCount], [batchSize, tokenCount, vocabularySize], [batchSize, tokenCount]
         float* δlosses, float* probabilities, int* targetTokenIndices,
         int batchSize, int tokenCount, int vocabularySize,
@@ -639,7 +639,7 @@ public unsafe class Llm : ILlm
         }
     }
 
-    public void AdamW(
+    public virtual void AdamW(
         float* gradients, float* ms, float* vs, float* parameters,
         long parameterCount, float learningRate,
         float beta1, float beta2, float eps, float weightDecay, int t)

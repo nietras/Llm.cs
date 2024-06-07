@@ -10,7 +10,7 @@ namespace nietras.LargeLanguageModel;
 
 public unsafe class Llm_nietras : Llm
 {
-    public new void LayerNormForward(
+    public override void LayerNormForward(
         // [batchSize, tokenCount, channelCount], [channelCount], [channelCount]
         float* input, float* weight, float* bias,
         int batchSize, int tokenCount, int channelCount,
@@ -84,7 +84,7 @@ public unsafe class Llm_nietras : Llm
         }
     }
 
-    public new void LayerNormBackward(
+    public override void LayerNormBackward(
         // [batchSize, tokenCount, channelCount], [batchSize, tokenCount, channelCount], [channelCount]
         float* δoutput, float* input, float* weight,
         // [batchSize, tokenCount], [batchSize, tokenCount]
@@ -147,7 +147,7 @@ public unsafe class Llm_nietras : Llm
         }
     }
 
-    public new void MatMulForward(
+    public override void MatMulForward(
         // [batchSize, tokenCount, inputChannelCount], [outputChannelCount, inputChannelCount], [outputChannelCount]
         float* input, float* weight, float* bias,
         int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount,
@@ -266,7 +266,7 @@ public unsafe class Llm_nietras : Llm
         }
     }
 
-    public new void MatMulBackward(
+    public override void MatMulBackward(
         // [batchSize, tokenCount, outputChannelCount], [batchSize, tokenCount, inputChannelCount], [outputChannelCount, inputChannelCount]
         float* δoutput, float* input, float* weight,
         int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount,
@@ -360,7 +360,7 @@ public unsafe class Llm_nietras : Llm
         }
     }
 
-    public new void AttentionBackward(
+    public override void AttentionBackward(
         // [batchSize, tokenCount, channelCount], [batchSize, headCount, tokenCount, tokenCount], [batchSize, tokenCount, 3 * channelCount (Q, K, V)]
         float* δoutput, float* postAttention, float* input,
         int batchSize, int tokenCount, int channelCount, int headCount,
@@ -473,7 +473,7 @@ public unsafe class Llm_nietras : Llm
 
     static readonly float GeluScalingFactor = MathF.Sqrt(2.0f / MathF.PI);
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public new void GeLUForward(float* input, int count, float* output)
+    public override void GeLUForward(float* input, int count, float* output)
     {
         P.For(0, count, i =>
         {
@@ -484,7 +484,7 @@ public unsafe class Llm_nietras : Llm
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public new void GeLUBackward(
+    public override void GeLUBackward(
         float* δoutput, float* input,
         int count, float* δinput)
     {
@@ -509,7 +509,7 @@ public unsafe class Llm_nietras : Llm
         }
     }
 
-    public new void AdamW(
+    public override void AdamW(
         float* gradients, float* ms, float* vs, float* parameters,
         long parameterCount, float learningRate,
         float beta1, float beta2, float eps, float weightDecay, int t)
