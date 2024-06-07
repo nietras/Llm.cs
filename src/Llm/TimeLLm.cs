@@ -6,10 +6,10 @@ using System.Runtime.CompilerServices;
 
 namespace nietras.LargeLanguageModel;
 
-internal unsafe class TimeLlm<TLlm>
-    where TLlm : ILlm
+internal unsafe class TimeLlm(ILlm llm)
 {
     readonly SortedDictionary<TimeKey, List<long>> _keyToTimes = [];
+    readonly ILlm _llm = llm;
 
     public string Part { get; set; } = string.Empty;
     public int Index { get; set; } = -1;
@@ -23,7 +23,7 @@ internal unsafe class TimeLlm<TLlm>
             float* output)
     {
         using var _ = NewTimer();
-        TLlm.EmbedForward(tokenIndices, tokenEmbeddings, positionEmbeddings, batchSize, tokenCount, channelCount, output);
+        _llm.EmbedForward(tokenIndices, tokenEmbeddings, positionEmbeddings, batchSize, tokenCount, channelCount, output);
     }
     public void EmbedBackward(
             float* δoutput, int* tokenIndices,
@@ -31,7 +31,7 @@ internal unsafe class TimeLlm<TLlm>
             float* δtokenEmbeddings, float* δpositionEmbeddings)
     {
         using var _ = NewTimer();
-        TLlm.EmbedBackward(δoutput, tokenIndices, batchSize, tokenCount, channelCount, δtokenEmbeddings, δpositionEmbeddings);
+        _llm.EmbedBackward(δoutput, tokenIndices, batchSize, tokenCount, channelCount, δtokenEmbeddings, δpositionEmbeddings);
     }
 
     public void LayerNormForward(
@@ -39,7 +39,7 @@ internal unsafe class TimeLlm<TLlm>
             float* mean, float* invStdDev, float* output)
     {
         using var _ = NewTimer();
-        TLlm.LayerNormForward(input, weight, bias, batchSize, tokenCount, channelCount, mean, invStdDev, output);
+        _llm.LayerNormForward(input, weight, bias, batchSize, tokenCount, channelCount, mean, invStdDev, output);
     }
     public void LayerNormBackward(
             float* δoutput, float* input, float* weight, float* mean, float* invStdDev,
@@ -47,7 +47,7 @@ internal unsafe class TimeLlm<TLlm>
             float* δweight, float* δbias, float* δinput)
     {
         using var _ = NewTimer();
-        TLlm.LayerNormBackward(δoutput, input, weight, mean, invStdDev, batchSize, tokenCount, channelCount, δweight, δbias, δinput);
+        _llm.LayerNormBackward(δoutput, input, weight, mean, invStdDev, batchSize, tokenCount, channelCount, δweight, δbias, δinput);
     }
 
     public void MatMulForward(
@@ -56,7 +56,7 @@ internal unsafe class TimeLlm<TLlm>
             float* output)
     {
         using var _ = NewTimer();
-        TLlm.MatMulForward(input, weight, bias, batchSize, tokenCount, inputChannelCount, outputChannelCount, output);
+        _llm.MatMulForward(input, weight, bias, batchSize, tokenCount, inputChannelCount, outputChannelCount, output);
     }
     public void MatMulBackward(
             float* δoutput, float* input, float* weight,
@@ -64,7 +64,7 @@ internal unsafe class TimeLlm<TLlm>
             float* δweight, float* δbias, float* δinput)
     {
         using var _ = NewTimer();
-        TLlm.MatMulBackward(δoutput, input, weight, batchSize, tokenCount, inputChannelCount, outputChannelCount, δweight, δbias, δinput);
+        _llm.MatMulBackward(δoutput, input, weight, batchSize, tokenCount, inputChannelCount, outputChannelCount, δweight, δbias, δinput);
     }
 
     public void AttentionForward(
@@ -73,7 +73,7 @@ internal unsafe class TimeLlm<TLlm>
         float* preAttention, float* postAttention, float* output)
     {
         using var _ = NewTimer();
-        TLlm.AttentionForward(input, batchSize, tokenCount, channelCount, headCount, preAttention, postAttention, output);
+        _llm.AttentionForward(input, batchSize, tokenCount, channelCount, headCount, preAttention, postAttention, output);
     }
     public void AttentionBackward(
         float* δoutput, float* postAttention, float* input,
@@ -81,29 +81,29 @@ internal unsafe class TimeLlm<TLlm>
         float* δpreAttention, float* δpostAttention, float* δinput)
     {
         using var _ = NewTimer();
-        TLlm.AttentionBackward(δoutput, postAttention, input, batchSize, tokenCount, channelCount, headCount, δpreAttention, δpostAttention, δinput);
+        _llm.AttentionBackward(δoutput, postAttention, input, batchSize, tokenCount, channelCount, headCount, δpreAttention, δpostAttention, δinput);
     }
 
     public void GeLUForward(float* input, int count, float* output)
     {
         using var _ = NewTimer();
-        TLlm.GeLUForward(input, count, output);
+        _llm.GeLUForward(input, count, output);
     }
     public void GeLUBackward(float* δoutput, float* input, int count, float* δinput)
     {
         using var _ = NewTimer();
-        TLlm.GeLUBackward(δoutput, input, count, δinput);
+        _llm.GeLUBackward(δoutput, input, count, δinput);
     }
 
     public void ResidualForward(float* left, float* right, int count, float* output)
     {
         using var _ = NewTimer();
-        TLlm.ResidualForward(left, right, count, output);
+        _llm.ResidualForward(left, right, count, output);
     }
     public void ResidualBackward(float* δoutput, int count, float* δleft, float* δright)
     {
         using var _ = NewTimer();
-        TLlm.ResidualBackward(δoutput, count, δleft, δright);
+        _llm.ResidualBackward(δoutput, count, δleft, δright);
     }
 
     public void SoftmaxForward(float* logits,
@@ -111,7 +111,7 @@ internal unsafe class TimeLlm<TLlm>
         float* probabilities)
     {
         using var _ = NewTimer();
-        TLlm.SoftmaxForward(logits, batchSize, tokenCount, vocabularySize, probabilities);
+        _llm.SoftmaxForward(logits, batchSize, tokenCount, vocabularySize, probabilities);
     }
 
     public void CrossEntropyForward(
@@ -120,7 +120,7 @@ internal unsafe class TimeLlm<TLlm>
         float* losses)
     {
         using var _ = NewTimer();
-        TLlm.CrossEntropyForward(probabilities, targetTokenIndices, batchSize, tokenCount, vocabularySize, losses);
+        _llm.CrossEntropyForward(probabilities, targetTokenIndices, batchSize, tokenCount, vocabularySize, losses);
     }
 
     public void CrossEntropySoftmaxBackward(
@@ -129,7 +129,7 @@ internal unsafe class TimeLlm<TLlm>
         float* δlogits)
     {
         using var _ = NewTimer();
-        TLlm.CrossEntropySoftmaxBackward(δlosses, probabilities, targetTokenIndices, batchSize, tokenCount, vocabularySize, δlogits);
+        _llm.CrossEntropySoftmaxBackward(δlosses, probabilities, targetTokenIndices, batchSize, tokenCount, vocabularySize, δlogits);
     }
 
     public void AdamW(
@@ -138,7 +138,7 @@ internal unsafe class TimeLlm<TLlm>
         float beta1, float beta2, float eps, float weightDecay, int t)
     {
         using var _ = NewTimer();
-        TLlm.AdamW(gradients, ms, vs, parameters, parameterCount, learningRate, beta1, beta2, eps, weightDecay, t);
+        _llm.AdamW(gradients, ms, vs, parameters, parameterCount, learningRate, beta1, beta2, eps, weightDecay, t);
     }
 
     public void Zero(float* output, long count)
@@ -212,11 +212,11 @@ internal unsafe class TimeLlm<TLlm>
 
     internal readonly ref struct Timer
     {
-        readonly TimeLlm<TLlm> _llm;
+        readonly TimeLlm _llm;
         readonly string _callerMemberName;
         readonly long _start;
 
-        public Timer(TimeLlm<TLlm> llm, string callerMemberName)
+        public Timer(TimeLlm llm, string callerMemberName)
         {
             _llm = llm;
             _callerMemberName = callerMemberName;

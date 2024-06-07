@@ -1,6 +1,6 @@
 ﻿namespace nietras.LargeLanguageModel;
 
-public interface ILlm
+public unsafe interface ILlm
 {
     /// <summary>
     /// Forward pass of the embedding layer.
@@ -12,7 +12,7 @@ public interface ILlm
     /// <param name="tokenCount">The number of tokens.</param>
     /// <param name="channelCount">The number of channels.</param>
     /// <param name="output">Pointer to the output tensor.</param>
-    static abstract unsafe void EmbedForward(
+    void EmbedForward(
             int* tokenIndices, float* tokenEmbeddings, float* positionEmbeddings,
             int batchSize, int tokenCount, int channelCount,
             float* output);
@@ -26,7 +26,7 @@ public interface ILlm
     /// <param name="channelCount">The number of channels.</param>
     /// <param name="δtokenEmbeddings">Pointer to the token embeddings derivative tensor of shape [vocabularySize, channelCount].</param>
     /// <param name="δpositionEmbeddings">Pointer to the position embeddings derivative tensor of shape [maxTokenCount, channelCount].</param>
-    static abstract unsafe void EmbedBackward(
+    void EmbedBackward(
             float* δoutput, int* tokenIndices,
             int batchSize, int tokenCount, int channelCount,
             float* δtokenEmbeddings, float* δpositionEmbeddings);
@@ -43,7 +43,7 @@ public interface ILlm
     /// <param name="mean">The mean tensor of shape [batchSize, tokenCount].</param>
     /// <param name="invStdDev">The inverse standard deviation tensor of shape [batchSize, tokenCount].</param>
     /// <param name="output">The output tensor of shape [batchSize, tokenCount, channelCount].</param>
-    static abstract unsafe void LayerNormForward(
+    void LayerNormForward(
             float* input, float* weight, float* bias, int batchSize, int tokenCount, int channelCount,
             float* mean, float* invStdDev, float* output);
     /// <summary>
@@ -60,7 +60,7 @@ public interface ILlm
     /// <param name="δweight">The gradients of the weight tensor. Shape: [channelCount].</param>
     /// <param name="δbias">The gradients of the bias tensor. Shape: [channelCount].</param>
     /// <param name="δinput">The gradients of the input tensor. Shape: [batchSize, tokenCount, channelCount].</param>
-    static abstract unsafe void LayerNormBackward(
+    void LayerNormBackward(
             float* δoutput, float* input, float* weight, float* mean, float* invStdDev,
             int batchSize, int tokenCount, int channelCount,
             float* δweight, float* δbias, float* δinput);
@@ -82,7 +82,7 @@ public interface ILlm
     /// <param name="inputChannelCount">The number of input channels.</param>
     /// <param name="outputChannelCount">The number of output channels.</param>
     /// <param name="output">The output tensor of shape [batchSize, tokenCount, outputChannelCount].</param>
-    static abstract unsafe void MatMulForward(
+    void MatMulForward(
             float* input, float* weight, float* bias,
             int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount,
             float* output);
@@ -99,7 +99,7 @@ public interface ILlm
     /// <param name="δweight">The gradient of the weight tensor. Shape: [outputChannelCount, inputChannelCount].</param>
     /// <param name="δbias">The gradient of the bias tensor. Shape: [outputChannelCount].</param>
     /// <param name="δinput">The gradient of the input tensor. Shape: [batchSize, tokenCount, inputChannelCount].</param>
-    static abstract unsafe void MatMulBackward(
+    void MatMulBackward(
             float* δoutput, float* input, float* weight,
             int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount,
             float* δweight, float* δbias, float* δinput);
@@ -115,7 +115,7 @@ public interface ILlm
     /// <param name="preAttention">The pre-attention tensor of shape [batchSize, headCount, tokenCount, tokenCount] that holds the pre-attention scores.</param>
     /// <param name="postAttention">The post-attention tensor of shape [batchSize, headCount, tokenCount, tokenCount] that holds the post-attention scores.</param>
     /// <param name="output">The output tensor of shape [batchSize, tokenCount, channelCount] that holds the attention output.</param>
-    static abstract unsafe void AttentionForward(
+    void AttentionForward(
         float* input,
         int batchSize, int tokenCount, int channelCount, int headCount,
         float* preAttention, float* postAttention, float* output);
@@ -132,7 +132,7 @@ public interface ILlm
     /// <param name="δpreAttention">The gradient of the pre-softmax attention tensor. Shape: [batchSize, headCount, tokenCount, tokenCount].</param>
     /// <param name="δpostAttention">The gradient of the attention tensor. Shape: [batchSize, headCount, tokenCount, tokenCount].</param>
     /// <param name="δinput">The gradient of the input tensor. Shape: [batchSize, tokenCount, 3 * channelCount (Q, K, V)].</param>
-    static abstract unsafe void AttentionBackward(
+    void AttentionBackward(
         float* δoutput, float* postAttention, float* input,
         int batchSize, int tokenCount, int channelCount, int headCount,
         float* δpreAttention, float* δpostAttention, float* δinput);
@@ -143,7 +143,7 @@ public interface ILlm
     /// <param name="input">The input array.</param>
     /// <param name="count">The number of elements in the <paramref name="input"/> and <paramref name="output"/> array.</param>
     /// <param name="output">The output array.</param>
-    static abstract unsafe void GeLUForward(float* input, int count, float* output);
+    void GeLUForward(float* input, int count, float* output);
     /// <summary>
     /// Backward pass of Tanh based approximate GeLU (Gaussian Error Linear Unit).
     /// </summary>
@@ -151,7 +151,7 @@ public interface ILlm
     /// <param name="input">The input values.</param>
     /// <param name="count">The number of elements in the <paramref name="δoutput"/>, <paramref name="input"/> and <paramref name="δinput"/>.</param>
     /// <param name="δinput">The gradient of the input.</param>
-    static abstract unsafe void GeLUBackward(float* δoutput, float* input, int count, float* δinput);
+    void GeLUBackward(float* δoutput, float* input, int count, float* δinput);
 
     /// <summary>
     /// Forward pass of the residual/add operation.
@@ -160,7 +160,7 @@ public interface ILlm
     /// <param name="right">The input array for the right operand.</param>
     /// <param name="count">The number of elements in the arrays.</param>
     /// <param name="output">The output array.</param>
-    static abstract unsafe void ResidualForward(float* left, float* right, int count, float* output);
+    void ResidualForward(float* left, float* right, int count, float* output);
     /// <summary>
     /// Backward pass of the residual/add connection.
     /// </summary>
@@ -168,7 +168,7 @@ public interface ILlm
     /// <param name="count">The number of elements in the tensors.</param>
     /// <param name="δleft">The gradients of the left tensor.</param>
     /// <param name="δright">The gradients of the right tensor.</param>
-    static abstract unsafe void ResidualBackward(float* δoutput, int count, float* δleft, float* δright);
+    void ResidualBackward(float* δoutput, int count, float* δleft, float* δright);
 
     /// <summary>
     /// Forward pass of the softmax layer.
@@ -178,7 +178,7 @@ public interface ILlm
     /// <param name="tokenCount">The number of tokens.</param>
     /// <param name="vocabularySize">The size of the vocabulary.</param>
     /// <param name="probabilities">The output probabilities. Sums to 1.0 for each batch,token. Shape: [batchSize, tokenCount, vocabularySize]</param>
-    static abstract unsafe void SoftmaxForward(float* logits,
+    void SoftmaxForward(float* logits,
         int batchSize, int tokenCount, int vocabularySize,
         float* probabilities);
     /// <summary>
@@ -190,7 +190,7 @@ public interface ILlm
     /// <param name="tokenCount">The number of tokens.</param>
     /// <param name="vocabularySize">The size of the vocabulary.</param>
     /// <param name="losses">The output losses. Shape: [batchSize, tokenCount]</param>
-    static abstract unsafe void CrossEntropyForward(
+    void CrossEntropyForward(
         float* probabilities, int* targetTokenIndices,
         int batchSize, int tokenCount, int vocabularySize,
         float* losses);
@@ -204,7 +204,7 @@ public interface ILlm
     /// <param name="tokenCount">The number of tokens.</param>
     /// <param name="vocabularySize">The size of the vocabulary.</param>
     /// <param name="δlogits">The gradients of the logits with respect to the input. Shape: [batchSize, tokenCount, vocabularySize].</param>
-    static abstract unsafe void CrossEntropySoftmaxBackward(
+    void CrossEntropySoftmaxBackward(
         float* δlosses, float* probabilities, int* targetTokenIndices,
         int batchSize, int tokenCount, int vocabularySize,
         float* δlogits);
@@ -223,7 +223,7 @@ public interface ILlm
     /// <param name="eps">A small value to prevent division by zero.</param>
     /// <param name="weightDecay">The weight decay rate.</param>
     /// <param name="t">The current time step.</param>
-    static abstract unsafe void AdamW(
+    void AdamW(
         float* gradients, float* ms, float* vs, float* parameters,
         long parameterCount, float learningRate,
         float beta1, float beta2, float eps, float weightDecay, int t);

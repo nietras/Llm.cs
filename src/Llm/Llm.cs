@@ -11,7 +11,7 @@ namespace nietras.LargeLanguageModel;
 
 // all the individual layers' forward and backward passes
 // batchSize = B, tokenCount = T, channelCount = C, vocabularySize = V
-public unsafe partial class Llm : ILlm
+public unsafe class Llm : ILlm
 {
     // Order of method parameters:
     // * Source memory
@@ -27,7 +27,7 @@ public unsafe partial class Llm : ILlm
 
     internal Llm() { }
 
-    public static unsafe void EmbedForward(
+    public void EmbedForward(
         // [batchSize, tokenCount], [vocabularySize, channelCount], [maxTokenCount, channelCount]
         int* tokenIndices, float* tokenEmbeddings, float* positionEmbeddings,
         int batchSize, int tokenCount, int channelCount,
@@ -55,7 +55,7 @@ public unsafe partial class Llm : ILlm
         }
     }
 
-    public static unsafe void EmbedBackward(
+    public void EmbedBackward(
         // [batchSize, tokenCount, channelCount], [batchSize, tokenCount]
         float* δoutput, int* tokenIndices,
         int batchSize, int tokenCount, int channelCount,
@@ -80,7 +80,7 @@ public unsafe partial class Llm : ILlm
         }
     }
 
-    public static unsafe void LayerNormForward(
+    public void LayerNormForward(
         // [batchSize, tokenCount, channelCount], [channelCount], [channelCount]
         float* input, float* weight, float* bias,
         int batchSize, int tokenCount, int channelCount,
@@ -117,7 +117,7 @@ public unsafe partial class Llm : ILlm
         //    }
         //}
 
-        static unsafe void LayerNormForwardAtBatchToken(
+        void LayerNormForwardAtBatchToken(
             float* input_b, float* weight, float* bias, int channelCount,
             int t, float eps, float* mean_b, float* invStdDev_b, float* output_b)
         {
@@ -154,7 +154,7 @@ public unsafe partial class Llm : ILlm
         }
     }
 
-    public static unsafe void LayerNormBackward(
+    public void LayerNormBackward(
         // [batchSize, tokenCount, channelCount], [batchSize, tokenCount, channelCount], [channelCount]
         float* δoutput, float* input, float* weight,
         // [batchSize, tokenCount], [batchSize, tokenCount]
@@ -176,7 +176,7 @@ public unsafe partial class Llm : ILlm
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        static unsafe void LayerNormBackwardAtBatchToken(
+        void LayerNormBackwardAtBatchToken(
             float* δoutput, float* input, float* weight, float* mean, float* invStdDev,
             int tokenCount, int channelCount, float* δweight, float* δbias,
             float* δinput, int b, int t)
@@ -217,7 +217,7 @@ public unsafe partial class Llm : ILlm
         }
     }
 
-    public static unsafe void MatMulForward(
+    public void MatMulForward(
         // [batchSize, tokenCount, inputChannelCount], [outputChannelCount, inputChannelCount], [outputChannelCount]
         float* input, float* weight, float* bias,
         int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount,
@@ -237,7 +237,7 @@ public unsafe partial class Llm : ILlm
         // https://richardstartin.github.io/posts/mmm-revisited
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        static unsafe void MatMulForwardAtBatchToken(
+        void MatMulForwardAtBatchToken(
             float* output, float* input, float* weight, float* bias,
             int tokenCount, int inputChannelCount, int outputChannelCount,
             nint b, nint t)
@@ -336,7 +336,7 @@ public unsafe partial class Llm : ILlm
         }
     }
 
-    public static unsafe void MatMulBackward(
+    public void MatMulBackward(
         // [batchSize, tokenCount, outputChannelCount], [batchSize, tokenCount, inputChannelCount], [outputChannelCount, inputChannelCount]
         float* δoutput, float* input, float* weight,
         int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount,
@@ -358,7 +358,7 @@ public unsafe partial class Llm : ILlm
         //}
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        static unsafe void MatMulBackwardForInputAtBatchToken(
+        void MatMulBackwardForInputAtBatchToken(
             float* δoutput, float* weight,
             nint tokenCount, nint inputChannelCount, nint outputChannelCount,
             float* δinput,
@@ -397,7 +397,7 @@ public unsafe partial class Llm : ILlm
                 oc);
         });
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        static unsafe void MatMulBackwardForWeightBiasAtOutputChannel(
+        void MatMulBackwardForWeightBiasAtOutputChannel(
             float* δoutput, float* input,
             nint batchSize, nint tokenCount, nint inputChannelCount, nint outputChannelCount,
             float* δweight, float* δbias,
@@ -430,7 +430,7 @@ public unsafe partial class Llm : ILlm
         }
     }
 
-    public static unsafe void AttentionForward(
+    public void AttentionForward(
         // [batchSize, tokenCount, 3 * channelCount (query Q, key K, value V)]
         float* input,
         int batchSize, int tokenCount, int channelCount, int headCount,
@@ -476,7 +476,7 @@ public unsafe partial class Llm : ILlm
         });
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        static unsafe void AttentionForwardAtBatchTokenHead(float* input,
+        void AttentionForwardAtBatchTokenHead(float* input,
             int tokenCount, int channelCount, int headCount,
             float* preAttention, float* postAttention, float* output,
             int b, int t, int h)
@@ -551,7 +551,7 @@ public unsafe partial class Llm : ILlm
         }
     }
 
-    public static unsafe void AttentionBackward(
+    public void AttentionBackward(
         // [batchSize, tokenCount, channelCount], [batchSize, headCount, tokenCount, tokenCount], [batchSize, tokenCount, 3 * channelCount (Q, K, V)]
         float* δoutput, float* postAttention, float* input,
         int batchSize, int tokenCount, int channelCount, int headCount,
@@ -591,7 +591,7 @@ public unsafe partial class Llm : ILlm
         });
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        static unsafe void AttentionBackwardAtBatchTokenHead(
+        void AttentionBackwardAtBatchTokenHead(
             float* δoutput, float* postAttention, float* input,
             int tokenCount, int channelCount, int headCount,
             int qkvChannelCount, int headSize, float scale,
@@ -676,7 +676,7 @@ public unsafe partial class Llm : ILlm
 
     static readonly float GeluScalingFactor = MathF.Sqrt(2.0f / MathF.PI);
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public static unsafe void GeLUForward(float* input, int count, float* output)
+    public void GeLUForward(float* input, int count, float* output)
     {
         //for (int i = 0; i < count; i++)
         P.For(0, count, i =>
@@ -689,7 +689,7 @@ public unsafe partial class Llm : ILlm
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public static unsafe void GeLUBackward(
+    public void GeLUBackward(
         float* δoutput, float* input,
         int count, float* δinput)
     {
@@ -716,7 +716,7 @@ public unsafe partial class Llm : ILlm
         }
     }
 
-    public static unsafe void ResidualForward(
+    public void ResidualForward(
         float* left, float* right, int count, float* output)
     {
         for (int i = 0; i < count; i++)
@@ -725,7 +725,7 @@ public unsafe partial class Llm : ILlm
         }
     }
 
-    public static unsafe void ResidualBackward(
+    public void ResidualBackward(
         float* δoutput, int count, float* δleft, float* δright)
     {
         // δleft/δright are same so seems redundant but leave as is for now
@@ -736,7 +736,7 @@ public unsafe partial class Llm : ILlm
         }
     }
 
-    public static unsafe void SoftmaxForward(
+    public void SoftmaxForward(
         // [batchSize, tokenCount, vocabularySize]
         float* logits,
         int batchSize, int tokenCount, int vocabularySize,
@@ -773,7 +773,7 @@ public unsafe partial class Llm : ILlm
         });
     }
 
-    public static unsafe void CrossEntropyForward(
+    public void CrossEntropyForward(
         // [batchSize, tokenCount, vocabularySize], [batchSize, tokenCount]
         float* probabilities, int* targetTokenIndices,
         int batchSize, int tokenCount, int vocabularySize,
@@ -794,7 +794,7 @@ public unsafe partial class Llm : ILlm
         }
     }
 
-    public static unsafe void CrossEntropySoftmaxBackward(
+    public void CrossEntropySoftmaxBackward(
         // [batchSize, tokenCount], [batchSize, tokenCount, vocabularySize], [batchSize, tokenCount]
         float* δlosses, float* probabilities, int* targetTokenIndices,
         int batchSize, int tokenCount, int vocabularySize,
@@ -820,7 +820,7 @@ public unsafe partial class Llm : ILlm
         }
     }
 
-    public static unsafe void AdamW(
+    public void AdamW(
         float* gradients, float* ms, float* vs, float* parameters,
         long parameterCount, float learningRate,
         float beta1, float beta2, float eps, float weightDecay, int t)
@@ -837,7 +837,7 @@ public unsafe partial class Llm : ILlm
             invOneMinusDecayBeta1, invOneMinusDecayBeta2, start, end);
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        static unsafe void AdamWImpl(
+        void AdamWImpl(
             float* gradients, float* ms, float* vs, float* parameters,
             float learningRate, float beta1, float beta2,
             float eps, float weightDecay, float invOneMinusDecayBeta1, float invOneMinusDecayBeta2,

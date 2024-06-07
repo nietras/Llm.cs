@@ -253,7 +253,7 @@ internal static partial class Gpt2
         model->mean_loss = -1.0f; // -1.0f will designate no loss
     }
 
-    static unsafe void Forward(GPT2* model, int* inputs, int* targetTokenIndices, int B, int T, TimeLlm<Llm> llm)
+    static unsafe void Forward(GPT2* model, int* inputs, int* targetTokenIndices, int B, int T, TimeLlm llm)
     {
         // targetTokenIndices are optional and could be null
 
@@ -408,7 +408,7 @@ internal static partial class Gpt2
         }
     }
 
-    static unsafe void ZeroGrad(GPT2* model, TimeLlm<Llm> llm)
+    static unsafe void ZeroGrad(GPT2* model, TimeLlm llm)
     {
         llm.Part = "1." + nameof(ZeroGrad);
         llm.Index = -1;
@@ -416,7 +416,7 @@ internal static partial class Gpt2
         if (model->grads_acts_memory != null) { llm.Zero(model->grads_acts_memory, model->num_activations); }
     }
 
-    static unsafe void Backward(GPT2* model, TimeLlm<Llm> llm)
+    static unsafe void Backward(GPT2* model, TimeLlm llm)
     {
 
         // double check we forwarded previously, with targetTokenIndices
@@ -533,7 +533,7 @@ internal static partial class Gpt2
     }
 
     public static unsafe void Update(GPT2* model,
-        float learningRate, float beta1, float beta2, float eps, float weightDecay, int t, TimeLlm<Llm> llm)
+        float learningRate, float beta1, float beta2, float eps, float weightDecay, int t, TimeLlm llm)
     {
         // lazily allocate the memory for m_memory and v_memory
         if (model->m_memory == null)
