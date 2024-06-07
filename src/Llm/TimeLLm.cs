@@ -152,17 +152,27 @@ internal unsafe class TimeLlm<TLlm>
         var keyToStats = _keyToTimes.ToDictionary(p => p.Key, p => ComputeStats(p.Value));
         var totalSum_ms = keyToStats.Values.Sum(s => s.Sum_ms);
 
-        var part = string.Empty;
-        foreach (var (key, times) in _keyToTimes)
+        var phase = string.Empty;
+        foreach (var (key, stats) in keyToStats)
         {
-            if (part != key.Part) { log(string.Empty); }
-            part = key.Part;
+            if (phase != key.Phase) { log(string.Empty); }
+            phase = key.Phase;
 
-            var s = ComputeStats(times);
+            log($"{key.Phase,-10} {key.Index:D2} {key.CallerMemberName,-27} " +
+                $"{stats.Sum_ms / totalSum_ms,3:P0} count: {stats.Count,3} sum: {stats.Sum_ms,6:F1} " +
+                $"min: {stats.Min_ms,5:F1} mean: {stats.Mean_ms,5:F1} max: {stats.Max_ms,5:F1} [ms]");
+        }
 
-            log($"{key.Part,-10} {key.Index:D2} {key.CallerMemberName,-27} " +
-                $"{s.Sum_ms / totalSum_ms,3:P0} count: {s.Count,3} sum: {s.Sum_ms,6:F1} " +
-                $"min: {s.Min_ms,5:F1} mean: {s.Mean_ms,5:F1} max: {s.Max_ms,5:F1} [ms]");
+        log("");
+
+        var methodToSum = keyToStats.GroupBy(p => p.Key.CallerMemberName)
+                                    .Select(g => (Method: g.Key, Sum_ms: g.Sum(s => s.Value.Sum_ms)))
+                                    .OrderByDescending(t => t.Sum_ms)
+                                    .ToList();
+        methodToSum.Add(("Total", totalSum_ms));
+        foreach (var (method, sum_ms) in methodToSum)
+        {
+            log($"{method,-27} {sum_ms / totalSum_ms,4:P0} sum: {sum_ms,6:F0} [ms]");
         }
     }
 
@@ -186,12 +196,12 @@ internal unsafe class TimeLlm<TLlm>
         return new(times.Count, sum_ms, min_ms, mean_ms, max_ms);
     }
 
-    readonly record struct TimeKey(string Part, int Index, string CallerMemberName)
+    readonly record struct TimeKey(string Phase, int Index, string CallerMemberName)
         : IComparable<TimeKey>
     {
         public int CompareTo(TimeKey other)
         {
-            var c = Part.CompareTo(other.Part);
+            var c = Phase.CompareTo(other.Phase);
             if (c != 0) { return c; }
             return Index.CompareTo(other.Index);
         }

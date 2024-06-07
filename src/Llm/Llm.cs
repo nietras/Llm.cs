@@ -22,7 +22,7 @@ public unsafe partial class Llm : ILlm
     // Perhaps nabla or math delta would be better but not allowed in C#
     // identifier. This is a trial, might be worst idea ever.
 
-    // Calling this "Encoder" is confusing as sounds like the entire other part
+    // Calling this "Encoder" is confusing as sounds like the entire other phase
     // of transformer architecture so renamed to "Embed".
 
     internal Llm() { }

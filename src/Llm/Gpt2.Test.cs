@@ -119,7 +119,7 @@ internal static partial class Gpt2
             Update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.01f, step + 1, llm);
             double t5_ms = stopwatch.Elapsed.TotalMilliseconds;
 
-            // llm.c did not include Update step when copied although significant part
+            // llm.c did not include Update step when copied although significant phase
             double total_ms = t3_ms + t5_ms - t4_ms;
 
             losses[step] = model.mean_loss;
