@@ -8,7 +8,7 @@ namespace nietras.LargeLanguageModel;
 
 internal static partial class Gpt2
 {
-    public static unsafe void Test(string dataDirectory)
+    public static unsafe void Test(string dataDirectory, ILlm llmToUse)
     {
         // build the GPT-2 model from a checkpoint
         GPT2 model;
@@ -71,7 +71,7 @@ internal static partial class Gpt2
         const int steps = 5;
         float* losses = stackalloc float[steps];
         var stopwatch = new Stopwatch();
-        var llm = CreateLlm();
+        var llm = CreateTimeLlm(llmToUse);
         for (int step = 0; step < steps; step++)
         {
             stopwatch.Restart();

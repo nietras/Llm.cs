@@ -1,0 +1,15 @@
+{
+  "profiles": {
+    "Llm": {
+      "commandName": "Project"
+    },
+    "Llm (Llm.cs)": {
+      "commandName": "Project",
+      "commandLineArgs": "Llm"
+    },
+    "Llm (Llm_nietras.cs)": {
+      "commandName": "Project",
+      "commandLineArgs": "Llm_nietras"
+    }
+  }
+}

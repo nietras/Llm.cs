@@ -33,7 +33,7 @@ internal static partial class Gpt2
 
     // ----------------------------------------------------------------------------
     // main training loop
-    public static unsafe void Train(string dataDirectory)
+    public static unsafe void Train(string dataDirectory, ILlm llmToUse)
     {
         // build the GPT-2 model from a checkpoint
         GPT2 model;
@@ -63,7 +63,7 @@ internal static partial class Gpt2
 
         // train
         var stopwatch = new Stopwatch();
-        var llm = CreateLlm();
+        var llm = CreateTimeLlm(llmToUse);
         for (int step = 0; step <= 20; step++)
         {
 
