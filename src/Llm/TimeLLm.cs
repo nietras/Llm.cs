@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace nietras.LargeLanguageModel;
 
@@ -147,23 +148,24 @@ internal unsafe class TimeLlm(ILlm llm)
         Gpt2.memset(output, count);
     }
 
-    internal void Trace(Action<string> log)
+    internal string CreateReport()
     {
         var keyToStats = _keyToTimes.ToDictionary(p => p.Key, p => ComputeStats(p.Value));
         var totalSum_ms = keyToStats.Values.Sum(s => s.Sum_ms);
 
+        var sb = new StringBuilder();
         var phase = string.Empty;
         foreach (var (key, stats) in keyToStats)
         {
-            if (phase != key.Phase) { log(string.Empty); }
+            if (phase != key.Phase) { sb.AppendLine(); }
             phase = key.Phase;
 
-            log($"{key.Phase,-10} {key.Index:D2} {key.CallerMemberName,-27} " +
-                $"{stats.Sum_ms / totalSum_ms,3:P0} count: {stats.Count,3} sum: {stats.Sum_ms,6:F1} " +
-                $"min: {stats.Min_ms,5:F1} mean: {stats.Mean_ms,5:F1} max: {stats.Max_ms,5:F1} [ms]");
+            sb.AppendLine($"{key.Phase,-10} {key.Index:D2} {key.CallerMemberName,-27} " +
+                          $"{stats.Sum_ms / totalSum_ms,3:P0} count: {stats.Count,3} sum: {stats.Sum_ms,6:F1} " +
+                          $"min: {stats.Min_ms,5:F1} mean: {stats.Mean_ms,5:F1} max: {stats.Max_ms,5:F1} [ms]");
         }
 
-        log("");
+        sb.AppendLine();
 
         var methodToSum = keyToStats.GroupBy(p => p.Key.CallerMemberName)
                                     .Select(g => (Method: g.Key, Sum_ms: g.Sum(s => s.Value.Sum_ms)))
@@ -172,8 +174,9 @@ internal unsafe class TimeLlm(ILlm llm)
         methodToSum.Add(("Total", totalSum_ms));
         foreach (var (method, sum_ms) in methodToSum)
         {
-            log($"{method,-27} {sum_ms / totalSum_ms,4:P0} sum: {sum_ms,6:F0} [ms]");
+            sb.AppendLine($"{method,-27} {sum_ms / totalSum_ms,4:P0} sum: {sum_ms,6:F0} [ms]");
         }
+        return sb.ToString();
     }
 
     static TimeStats ComputeStats(List<long> times)

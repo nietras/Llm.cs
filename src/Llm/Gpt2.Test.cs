@@ -132,7 +132,9 @@ internal static partial class Gpt2
         }
         Log($"overall okay: {allOk}");
 
-        llm.Trace(Log);
+        var timeReport = llm.CreateReport();
+
+        Log(timeReport);
 
         // free everything
         free(x);
