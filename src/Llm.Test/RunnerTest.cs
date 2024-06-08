@@ -8,7 +8,8 @@ namespace nietras.LargeLanguageModel.Test;
 [TestClass]
 public class RunnerTest
 {
-    public static IEnumerable<object[]> LlmNames => LlmFactory.FindNameToLLmCreator().Keys.Select(n => new object[] { n });
+    public static IEnumerable<object[]> LlmNames { get; } =
+        LlmFactory.NameToLlmCreate.Keys.Select(n => new object[] { n });
 
     [TestMethod]
     [DynamicData(nameof(LlmNames))]

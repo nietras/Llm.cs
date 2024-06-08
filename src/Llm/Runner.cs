@@ -22,10 +22,7 @@ public static class Runner
         //ThreadPool.GetMinThreads(out var workerThreads, out var completionPortThreads);
         //log($"MinThreads {workerThreads} {completionPortThreads}");
 
-        // Find all ILlm implementations in the current assembly
-        var nameToLlmCreator = LlmFactory.FindNameToLLmCreator();
-
-        ILlm llm = (args?.Length > 0 && nameToLlmCreator.TryGetValue(args[0], out var create))
+        ILlm llm = (args?.Length > 0 && LlmFactory.NameToLlmCreate.TryGetValue(args[0], out var create))
             ? create() : LlmFactory.CreateDefault();
         Gpt2.Test(dataDirectory, llm);
         //Gpt2.Train(dataDirectory);

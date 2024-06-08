@@ -143,6 +143,8 @@ internal static partial class Gpt2
         free(expected_loss);
         free(expected_grads_memory);
         Free(&model);
+
+        if (!allOk) { throw new ArithmeticException($"{llmToUse.GetType().Name} failed {nameof(Gpt2)} train test run, see output for details."); }
     }
 
     const float CheckDiffLimit = 0.01f;
