@@ -5,7 +5,7 @@ namespace nietras.LargeLanguageModel;
 
 public static class LlmFactory
 {
-    public static IReadOnlyDictionary<string, Func<ILlm>> NameToLlmCreate { get; } =
+    public static IReadOnlyDictionary<string, Func<ILlm>> NameToCreate { get; } =
         new Dictionary<string, Func<ILlm>>()
         {
             { nameof(Llm), () => new Llm() },

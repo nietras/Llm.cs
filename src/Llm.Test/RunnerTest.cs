@@ -10,7 +10,7 @@ namespace nietras.LargeLanguageModel.Test;
 public class RunnerTest
 {
     public static IEnumerable<object[]> LlmNames { get; } =
-        LlmFactory.NameToLlmCreate.Keys.Select(n => new object[] { n });
+        LlmFactory.NameToCreate.Keys.Select(n => new object[] { n });
 
     [TestMethod]
     [DynamicData(nameof(LlmNames))]

@@ -16,13 +16,7 @@ public static class Runner
         // download the model and tokenizer files if they don't exist
         DownloadBinaryFilesIfNotExists(Gpt2.FileNames, Gpt2.RemoteUrl, dataDirectory, log);
 
-        //ThreadPool.SetMinThreads(Environment.ProcessorCount, Environment.ProcessorCount);
-        //ThreadPool.SetMaxThreads(Environment.ProcessorCount, Environment.ProcessorCount);
-        //log($"{nameof(ThreadPool.ThreadCount)} {ThreadPool.ThreadCount}");
-        //ThreadPool.GetMinThreads(out var workerThreads, out var completionPortThreads);
-        //log($"MinThreads {workerThreads} {completionPortThreads}");
-
-        ILlm llm = (args?.Length > 0 && LlmFactory.NameToLlmCreate.TryGetValue(args[0], out var create))
+        ILlm llm = (args?.Length > 0 && LlmFactory.NameToCreate.TryGetValue(args[0], out var create))
             ? create() : LlmFactory.CreateDefault();
         Gpt2.Test(dataDirectory, llm);
         //Gpt2.Train(dataDirectory);
