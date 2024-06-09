@@ -94,6 +94,7 @@ namespace nietras.LargeLanguageModel
 {
     public interface ILlm
     {
+        unsafe void AdamW(float* gradients, float* ms, float* vs, float* parameters, long parameterCount, float learningRate, float beta1, float beta2, float eps, float weightDecay, int t);
         unsafe void AttentionBackward(float* δoutput, float* postAttention, float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* δpreAttention, float* δpostAttention, float* δinput);
         unsafe void AttentionForward(float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* preAttention, float* postAttention, float* output);
         unsafe void CrossEntropyForward(float* probabilities, int* targetTokenIndices, int batchSize, int tokenCount, int vocabularySize, float* losses);
@@ -112,21 +113,44 @@ namespace nietras.LargeLanguageModel
     }
     public class Llm : nietras.LargeLanguageModel.ILlm
     {
-        public static unsafe void AttentionBackward(float* δoutput, float* postAttention, float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* δpreAttention, float* δpostAttention, float* δinput) { }
-        public static unsafe void AttentionForward(float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* preAttention, float* postAttention, float* output) { }
-        public static unsafe void CrossEntropyForward(float* probabilities, int* targetTokenIndices, int batchSize, int tokenCount, int vocabularySize, float* losses) { }
-        public static unsafe void CrossEntropySoftmaxBackward(float* δlosses, float* probabilities, int* targetTokenIndices, int batchSize, int tokenCount, int vocabularySize, float* δlogits) { }
-        public static unsafe void EmbedBackward(float* δoutput, int* tokenIndices, int batchSize, int tokenCount, int channelCount, float* δtokenEmbeddings, float* δpositionEmbeddings) { }
-        public static unsafe void EmbedForward(int* tokenIndices, float* tokenEmbeddings, float* positionEmbeddings, int batchSize, int tokenCount, int channelCount, float* output) { }
-        public static unsafe void GeLUBackward(float* δoutput, float* input, int count, float* δinput) { }
-        public static unsafe void GeLUForward(float* input, int count, float* output) { }
-        public static unsafe void LayerNormBackward(float* δoutput, float* input, float* weight, float* mean, float* invStdDev, int batchSize, int tokenCount, int channelCount, float* δweight, float* δbias, float* δinput) { }
-        public static unsafe void LayerNormForward(float* input, float* weight, float* bias, int batchSize, int tokenCount, int channelCount, float* mean, float* invStdDev, float* output) { }
-        public static unsafe void MatMulBackward(float* δoutput, float* input, float* weight, int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount, float* δweight, float* δbias, float* δinput) { }
-        public static unsafe void MatMulForward(float* input, float* weight, float* bias, int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount, float* output) { }
-        public static unsafe void ResidualBackward(float* δoutput, int count, float* δleft, float* δright) { }
-        public static unsafe void ResidualForward(float* left, float* right, int count, float* output) { }
-        public static unsafe void SoftmaxForward(float* logits, int batchSize, int tokenCount, int vocabularySize, float* probabilities) { }
+        public Llm() { }
+        public virtual unsafe void AdamW(float* gradients, float* ms, float* vs, float* parameters, long parameterCount, float learningRate, float beta1, float beta2, float eps, float weightDecay, int t) { }
+        public virtual unsafe void AttentionBackward(float* δoutput, float* postAttention, float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* δpreAttention, float* δpostAttention, float* δinput) { }
+        public virtual unsafe void AttentionForward(float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* preAttention, float* postAttention, float* output) { }
+        public virtual unsafe void CrossEntropyForward(float* probabilities, int* targetTokenIndices, int batchSize, int tokenCount, int vocabularySize, float* losses) { }
+        public virtual unsafe void CrossEntropySoftmaxBackward(float* δlosses, float* probabilities, int* targetTokenIndices, int batchSize, int tokenCount, int vocabularySize, float* δlogits) { }
+        public virtual unsafe void EmbedBackward(float* δoutput, int* tokenIndices, int batchSize, int tokenCount, int channelCount, float* δtokenEmbeddings, float* δpositionEmbeddings) { }
+        public virtual unsafe void EmbedForward(int* tokenIndices, float* tokenEmbeddings, float* positionEmbeddings, int batchSize, int tokenCount, int channelCount, float* output) { }
+        public virtual unsafe void GeLUBackward(float* δoutput, float* input, int count, float* δinput) { }
+        public virtual unsafe void GeLUForward(float* input, int count, float* output) { }
+        public virtual unsafe void LayerNormBackward(float* δoutput, float* input, float* weight, float* mean, float* invStdDev, int batchSize, int tokenCount, int channelCount, float* δweight, float* δbias, float* δinput) { }
+        public virtual unsafe void LayerNormForward(float* input, float* weight, float* bias, int batchSize, int tokenCount, int channelCount, float* mean, float* invStdDev, float* output) { }
+        public virtual unsafe void MatMulBackward(float* δoutput, float* input, float* weight, int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount, float* δweight, float* δbias, float* δinput) { }
+        public virtual unsafe void MatMulForward(float* input, float* weight, float* bias, int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount, float* output) { }
+        public virtual unsafe void ResidualBackward(float* δoutput, int count, float* δleft, float* δright) { }
+        public virtual unsafe void ResidualForward(float* left, float* right, int count, float* output) { }
+        public virtual unsafe void SoftmaxForward(float* logits, int batchSize, int tokenCount, int vocabularySize, float* probabilities) { }
+    }
+    public static class LlmFactory
+    {
+        public static System.Collections.Generic.IReadOnlyDictionary<string, System.Func<nietras.LargeLanguageModel.ILlm>> NameToLlmCreate { get; }
+        public static nietras.LargeLanguageModel.ILlm CreateDefault() { }
+    }
+    public class Llm_nietras : nietras.LargeLanguageModel.Llm
+    {
+        public Llm_nietras() { }
+        public override unsafe void AdamW(float* gradients, float* ms, float* vs, float* parameters, long parameterCount, float learningRate, float beta1, float beta2, float eps, float weightDecay, int t) { }
+        public override unsafe void AttentionBackward(float* δoutput, float* postAttention, float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* δpreAttention, float* δpostAttention, float* δinput) { }
+        public override unsafe void GeLUBackward(float* δoutput, float* input, int count, float* δinput) { }
+        public override unsafe void GeLUForward(float* input, int count, float* output) { }
+        public override unsafe void LayerNormBackward(float* δoutput, float* input, float* weight, float* mean, float* invStdDev, int batchSize, int tokenCount, int channelCount, float* δweight, float* δbias, float* δinput) { }
+        public override unsafe void LayerNormForward(float* input, float* weight, float* bias, int batchSize, int tokenCount, int channelCount, float* mean, float* invStdDev, float* output) { }
+        public override unsafe void MatMulBackward(float* δoutput, float* input, float* weight, int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount, float* δweight, float* δbias, float* δinput) { }
+        public override unsafe void MatMulForward(float* input, float* weight, float* bias, int batchSize, int tokenCount, int inputChannelCount, int outputChannelCount, float* output) { }
+    }
+    public static class Runner
+    {
+        public static void Run(string[] args, string dataDirectory, System.Action<string> log) { }
     }
 }
 ```
