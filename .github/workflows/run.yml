@@ -2,9 +2,11 @@
 
 permissions: read-all
 
-# configure manual trigger
 on:
-  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
   build:
@@ -25,5 +27,5 @@ jobs:
       run: dotnet restore
     - name: Build
       run: dotnet build -c ${{ matrix.configuration }} --no-restore 
-    - name: Bench
+    - name: Run
       run: dotnet run -c ${{ matrix.configuration }} --no-restore --project src/Llm/Llm.csproj

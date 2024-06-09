@@ -13,6 +13,8 @@ public static class Runner
         ArgumentNullException.ThrowIfNull(dataDirectory);
         ArgumentNullException.ThrowIfNull(log);
 
+        log($"{nameof(Environment.ProcessorCount)}: {Environment.ProcessorCount}");
+
         // download the model and tokenizer files if they don't exist
         DownloadBinaryFilesIfNotExists(Gpt2.FileNames, Gpt2.RemoteUrl, dataDirectory, log);
 
