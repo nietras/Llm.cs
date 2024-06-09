@@ -133,7 +133,7 @@ namespace nietras.LargeLanguageModel
     }
     public static class LlmFactory
     {
-        public static System.Collections.Generic.IReadOnlyDictionary<string, System.Func<nietras.LargeLanguageModel.ILlm>> NameToLlmCreate { get; }
+        public static System.Collections.Generic.IReadOnlyDictionary<string, System.Func<nietras.LargeLanguageModel.ILlm>> NameToCreate { get; }
         public static nietras.LargeLanguageModel.ILlm CreateDefault() { }
     }
     public class Llm_nietras : nietras.LargeLanguageModel.Llm

@@ -15,10 +15,11 @@
   </ItemGroup>
   
   <ItemGroup>
-    <PackageReference Include="coverlet.collector" Version="6.0.2">
+    <!--<PackageReference Include="coverlet.collector" Version="6.0.2">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
+    </PackageReference>-->
+    <PackageReference Include="Microsoft.CodeCoverage" Version="17.10.0" />
     <PackageReference Include="PublicApiGenerator" Version="11.1.0" />
     <PackageReference Include="MSTest" Version="3.4.3" />
   </ItemGroup>

@@ -19,6 +19,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "root", "root", "{32021D88-4
 		.editorconfig = .editorconfig
 		.gitattributes = .gitattributes
 		.gitignore = .gitignore
+		.markdownlint.json = .markdownlint.json
+		.runsettings = .runsettings
 		bench.ps1 = bench.ps1
 		CODE_OF_CONDUCT.md = CODE_OF_CONDUCT.md
 		global.json = global.json
@@ -31,6 +33,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "root", "root", "{32021D88-4
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ci", "ci", "{655261D2-06EE-4553-9EE2-ABBF5ED83AD4}"
 	ProjectSection(SolutionItems) = preProject
+		.gitignore = .gitignore
 		.github\workflows\bench.yml = .github\workflows\bench.yml
 		.github\dependabot.yml = .github\dependabot.yml
 		.github\workflows\dotnet.yml = .github\workflows\dotnet.yml
