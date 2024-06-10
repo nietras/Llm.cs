@@ -24,7 +24,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest, macos-14]
         configuration: [Debug, Release]
 
     runs-on: ${{ matrix.os }}
@@ -40,13 +40,14 @@ jobs:
     - name: Build
       run: dotnet build -c ${{ matrix.configuration }} --no-restore 
     - name: Test
-      run: dotnet test -c ${{ matrix.configuration }} --no-build --verbosity normal --collect:"XPlat Code Coverage"
-    - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v4.0.1
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        slug: nietras/llm.cs        
-        flags: ${{ matrix.os }},${{ matrix.configuration }}
+      run: dotnet test -c ${{ matrix.configuration }} --no-build --verbosity normal #--collect:"XPlat Code Coverage"
+    # Disable code coverage since too slow
+    # - name: Upload coverage reports to Codecov
+    #   uses: codecov/codecov-action@v4.0.1
+    #   with:
+    #     token: ${{ secrets.CODECOV_TOKEN }}
+    #     slug: nietras/llm.cs        
+    #     flags: ${{ matrix.os }},${{ matrix.configuration }}
       
   format:
     strategy:

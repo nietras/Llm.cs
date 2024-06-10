@@ -19,6 +19,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "root", "root", "{32021D88-4
 		.editorconfig = .editorconfig
 		.gitattributes = .gitattributes
 		.gitignore = .gitignore
+		.markdownlint.json = .markdownlint.json
 		bench.ps1 = bench.ps1
 		CODE_OF_CONDUCT.md = CODE_OF_CONDUCT.md
 		global.json = global.json
