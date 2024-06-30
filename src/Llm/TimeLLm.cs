@@ -12,6 +12,7 @@ internal unsafe class TimeLlm(ILlm llm)
     readonly SortedDictionary<TimeKey, List<long>> _keyToTimes = [];
     readonly ILlm _llm = llm;
 
+    public bool Enabled { get; set; } = false;
     public string Part { get; set; } = string.Empty;
     public int Index { get; set; } = -1;
 
@@ -135,20 +136,20 @@ internal unsafe class TimeLlm(ILlm llm)
 
     public void AdamW(
         float* gradients, float* ms, float* vs, float* parameters,
-        long parameterCount, float learningRate,
+        nint parameterCount, float learningRate,
         float beta1, float beta2, float eps, float weightDecay, int t)
     {
         using var _ = NewTimer();
         _llm.AdamW(gradients, ms, vs, parameters, parameterCount, learningRate, beta1, beta2, eps, weightDecay, t);
     }
 
-    public void Zero(float* output, long count)
+    public void Zero(float* output, nint count)
     {
         using var _ = NewTimer();
         Gpt2.memset(output, count);
     }
 
-    internal string CreateReport()
+    internal string CreateReport(int steps)
     {
         var keyToStats = _keyToTimes.ToDictionary(p => p.Key, p => ComputeStats(p.Value));
         var totalSum_ms = keyToStats.Values.Sum(s => s.Sum_ms);
@@ -174,7 +175,7 @@ internal unsafe class TimeLlm(ILlm llm)
         methodToSum.Add(("Total", totalSum_ms));
         foreach (var (method, sum_ms) in methodToSum)
         {
-            sb.AppendLine($"{method,-27} {sum_ms / totalSum_ms,4:P0} sum: {sum_ms,6:F0} [ms]");
+            sb.AppendLine($"{method,-27} {sum_ms / totalSum_ms,4:P0} sum: {sum_ms,6:F0} [ms] per step: {sum_ms / steps,6:F0} [ms]");
         }
         return sb.ToString();
     }
@@ -231,13 +232,16 @@ internal unsafe class TimeLlm(ILlm llm)
         {
             var end = Stopwatch.GetTimestamp();
             var time = end - _start;
-            TimeKey key = new(_llm.Part, _llm.Index, _callerMemberName);
-            if (!_llm._keyToTimes.TryGetValue(key, out var times))
+            if (_llm.Enabled)
             {
-                times = [];
-                _llm._keyToTimes.Add(key, times);
+                TimeKey key = new(_llm.Part, _llm.Index, _callerMemberName);
+                if (!_llm._keyToTimes.TryGetValue(key, out var times))
+                {
+                    times = [];
+                    _llm._keyToTimes.Add(key, times);
+                }
+                times.Add(time);
             }
-            times.Add(time);
         }
     }
 }

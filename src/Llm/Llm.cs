@@ -641,7 +641,7 @@ public unsafe class Llm : ILlm
 
     public virtual void AdamW(
         float* gradients, float* ms, float* vs, float* parameters,
-        long parameterCount, float learningRate,
+        nint parameterCount, float learningRate,
         float beta1, float beta2, float eps, float weightDecay, int t)
     {
         // reference: https://pytorch.org/docs/stable/generated/torch.optim.AdamW.html

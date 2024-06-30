@@ -15,18 +15,25 @@ public static class Runner
 
         log($"{nameof(Environment.ProcessorCount)}: {Environment.ProcessorCount}");
 
-        // download the model and tokenizer files if they don't exist
+        // Download the model and tokenizer files if they don't exist
         DownloadBinaryFilesIfNotExists(Gpt2.FileNames, Gpt2.RemoteUrl, dataDirectory, log);
 
-        ILlm llm = (args?.Length > 0 && LlmFactory.NameToCreate.TryGetValue(args[0], out var create))
-            ? create() : LlmFactory.CreateDefault();
-        Gpt2.Test(dataDirectory, llm);
-        //Gpt2.Train(dataDirectory);
+        var name = args?.Length > 0 ? args[0] : LlmFactory.DefaultName;
+        var llm = LlmFactory.NameToCreate[name]();
+
+        // Log to file too for reference
+        var logFilePath = Path.Combine(dataDirectory, $"{name}.log");
+        using var logWriter = new StreamWriter(logFilePath);
+        Action<string> newLog = t => { log(t); logWriter.WriteLine(t); };
+
+        const int steps = 5;
+        Gpt2.Test(dataDirectory, llm, steps, newLog);
+        //Gpt2.Train(dataDirectory, llm);
     }
 
-    static void DownloadBinaryFilesIfNotExists(
+    internal static void DownloadBinaryFilesIfNotExists(
         IReadOnlyList<string> fileNames, Func<string, string> toUrl,
-        string dataDirectory, Action<string> log)
+        string dataDirectory, Action<string>? log)
     {
         foreach (var fileName in fileNames)
         {
@@ -35,7 +42,7 @@ public static class Runner
             if (!File.Exists(filePath))
             {
                 var url = toUrl(fileName);
-                log($"Downloading '{url}' to '{filePath}'");
+                log?.Invoke($"Downloading '{url}' to '{filePath}'");
                 using var client = new HttpClient();
                 // Download the file
                 var source = client.GetStreamAsync(url).Result;

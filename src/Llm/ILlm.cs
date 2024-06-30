@@ -234,6 +234,6 @@ public unsafe interface ILlm
     /// <param name="t">The current time step.</param>
     void AdamW(
         float* gradients, float* ms, float* vs, float* parameters,
-        long parameterCount, float learningRate,
+        nint parameterCount, float learningRate,
         float beta1, float beta2, float eps, float weightDecay, int t);
 }
