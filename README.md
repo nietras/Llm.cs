@@ -45,7 +45,7 @@
   [State]
   batch_size: 4
   seq_len: 64
-  num_activations: 73323776
+  activationCount: 73323776
   Logits           TENSOR OK
   dwte             TENSOR OK
   dwpe             TENSOR OK
@@ -94,7 +94,7 @@ namespace nietras.LargeLanguageModel
 {
     public interface ILlm
     {
-        unsafe void AdamW(float* gradients, float* ms, float* vs, float* parameters, long parameterCount, float learningRate, float beta1, float beta2, float eps, float weightDecay, int t);
+        unsafe void AdamW(float* gradients, float* ms, float* vs, float* parameters, System.IntPtr parameterCount, float learningRate, float beta1, float beta2, float eps, float weightDecay, int t);
         unsafe void AttentionBackward(float* δoutput, float* postAttention, float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* δpreAttention, float* δpostAttention, float* δinput);
         unsafe void AttentionForward(float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* preAttention, float* postAttention, float* output);
         unsafe void CrossEntropyForward(float* probabilities, int* targetTokenIndices, int batchSize, int tokenCount, int vocabularySize, float* losses);
@@ -114,7 +114,7 @@ namespace nietras.LargeLanguageModel
     public class Llm : nietras.LargeLanguageModel.ILlm
     {
         public Llm() { }
-        public virtual unsafe void AdamW(float* gradients, float* ms, float* vs, float* parameters, long parameterCount, float learningRate, float beta1, float beta2, float eps, float weightDecay, int t) { }
+        public virtual unsafe void AdamW(float* gradients, float* ms, float* vs, float* parameters, System.IntPtr parameterCount, float learningRate, float beta1, float beta2, float eps, float weightDecay, int t) { }
         public virtual unsafe void AttentionBackward(float* δoutput, float* postAttention, float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* δpreAttention, float* δpostAttention, float* δinput) { }
         public virtual unsafe void AttentionForward(float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* preAttention, float* postAttention, float* output) { }
         public virtual unsafe void CrossEntropyForward(float* probabilities, int* targetTokenIndices, int batchSize, int tokenCount, int vocabularySize, float* losses) { }
@@ -139,7 +139,7 @@ namespace nietras.LargeLanguageModel
     public class Llm_nietras : nietras.LargeLanguageModel.Llm
     {
         public Llm_nietras() { }
-        public override unsafe void AdamW(float* gradients, float* ms, float* vs, float* parameters, long parameterCount, float learningRate, float beta1, float beta2, float eps, float weightDecay, int t) { }
+        public override unsafe void AdamW(float* gradients, float* ms, float* vs, float* parameters, System.IntPtr parameterCount, float learningRate, float beta1, float beta2, float eps, float weightDecay, int t) { }
         public override unsafe void AttentionBackward(float* δoutput, float* postAttention, float* input, int batchSize, int tokenCount, int channelCount, int headCount, float* δpreAttention, float* δpostAttention, float* δinput) { }
         public override unsafe void GeLUBackward(float* δoutput, float* input, int count, float* δinput) { }
         public override unsafe void GeLUForward(float* input, int count, float* output) { }

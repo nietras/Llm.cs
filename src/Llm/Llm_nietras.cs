@@ -512,7 +512,7 @@ public unsafe class Llm_nietras : Llm
 
     public override void AdamW(
         float* gradients, float* ms, float* vs, float* parameters,
-        long parameterCount, float learningRate,
+        nint parameterCount, float learningRate,
         float beta1, float beta2, float eps, float weightDecay, int t)
     {
         // reference: https://pytorch.org/docs/stable/generated/torch.optim.AdamW.html
@@ -520,8 +520,8 @@ public unsafe class Llm_nietras : Llm
         var invOneMinusDecayBeta1 = 1.0f / (1.0f - MathF.Pow(beta1, t));
         var invOneMinusDecayBeta2 = 1.0f / (1.0f - MathF.Pow(beta2, t));
 
-        var start = 0L;
-        var end = parameterCount;
+        nint start = 0;
+        nint end = parameterCount;
         AdamWImpl(gradients, ms, vs, parameters, learningRate, beta1,
             beta2, eps, weightDecay,
             invOneMinusDecayBeta1, invOneMinusDecayBeta2, start, end);
@@ -531,7 +531,7 @@ public unsafe class Llm_nietras : Llm
             float* gradients, float* ms, float* vs, float* parameters,
             float learningRate, float beta1, float beta2,
             float eps, float weightDecay, float invOneMinusDecayBeta1, float invOneMinusDecayBeta2,
-            long start, long end)
+            nint start, nint end)
         {
             var beta1Vector = new Vector<float>(beta1);
             var beta2Vector = new Vector<float>(beta2);
@@ -543,7 +543,7 @@ public unsafe class Llm_nietras : Llm
             var invOneMinusDecayBeta1Vector = new Vector<float>(invOneMinusDecayBeta1);
             var invOneMinusDecayBeta2Vector = new Vector<float>(invOneMinusDecayBeta2);
 
-            long i = start;
+            nint i = start;
 
             for (; i < (end - Vector<float>.Count); i += Vector<float>.Count)
             {

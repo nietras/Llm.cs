@@ -11,7 +11,7 @@ internal unsafe class Ntv<T> : SafeHandleZeroOrMinusOneIsInvalid
 {
     const int Alignment = 64;
 
-    public Ntv(long count) : base(true)
+    public Ntv(nint count) : base(true)
     {
         Ptr = (T*)NativeMemory.AlignedAlloc((nuint)(count * sizeof(T)), Alignment);
         Count = count;
@@ -19,7 +19,7 @@ internal unsafe class Ntv<T> : SafeHandleZeroOrMinusOneIsInvalid
     }
 
     public T* Ptr { get; private set; }
-    public long Count { get; }
+    public nint Count { get; }
     public nuint ByteCount => (nuint)(Count * sizeof(T));
 
     public Span<T> DebugSpan => new(Ptr, (int)(Math.Min(int.MaxValue, Count)));

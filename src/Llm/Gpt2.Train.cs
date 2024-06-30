@@ -8,16 +8,16 @@ namespace nietras.LargeLanguageModel;
 
 internal static partial class Gpt2
 {
-    const string ModelBinaryFileName = "gpt2_124M.bin";
-    const string ModelDebugBinaryFileName = "gpt2_124M_debug_state.bin";
+    internal const string ModelBinaryFileName = "gpt2_124M.bin";
+    internal const string ModelDebugBinaryFileName = "gpt2_124M_debug_state.bin";
 
-    const string TokenizerBinaryFileName = "gpt2_tokenizer.bin";
+    internal const string TokenizerBinaryFileName = "gpt2_tokenizer.bin";
 
-    const string DataTinyStoriesTrainBinaryFileName = "TinyStories_train.bin";
-    const string DataTinyStoriesValidationBinaryFileName = "TinyStories_val.bin";
+    internal const string DataTinyStoriesTrainBinaryFileName = "TinyStories_train.bin";
+    internal const string DataTinyStoriesValidationBinaryFileName = "TinyStories_val.bin";
 
-    const string TinyShakespeareTrainBinaryFileName = "tiny_shakespeare_train.bin";
-    const string TinyShakespeareValidationBinaryFileName = "tiny_shakespeare_val.bin";
+    internal const string TinyShakespeareTrainBinaryFileName = "tiny_shakespeare_train.bin";
+    internal const string TinyShakespeareValidationBinaryFileName = "tiny_shakespeare_val.bin";
 
     internal static readonly IReadOnlyList<string> FileNames = [
         ModelBinaryFileName,
@@ -36,8 +36,8 @@ internal static partial class Gpt2
     public static unsafe void Train(string dataDirectory, ILlm llmToUse)
     {
         // build the GPT-2 model from a checkpoint
-        GPT2 model;
-        BuildFromCheckpoint(&model, dataDirectory + ModelBinaryFileName);
+        GPT2 model = new();
+        BuildFromCheckpoint(ref model, dataDirectory + ModelBinaryFileName);
 
         // build the DataLoaders from tokens files. for now use tiny_shakespeare if available, else tiny_stories
         var tiny_stories_train = dataDirectory + DataTinyStoriesTrainBinaryFileName;
@@ -47,13 +47,13 @@ internal static partial class Gpt2
         var train_tokens = File.Exists(tiny_shakespeare_train) ? tiny_shakespeare_train : tiny_stories_train;
         var val_tokens = File.Exists(tiny_shakespeare_val) ? tiny_shakespeare_val : tiny_stories_val;
         int B = 4; // batch size 4 (i.e. 4 independent token sequences will be trained on)
-        int T = 64; // sequence length 64 (i.e. each sequence is 64 tokens long). must be <= maxT, which is 1024 for GPT-2
-        using DataLoader train_loader = new(train_tokens, B, T);
-        Log($"train dataset num_batches: {train_loader.num_batches}");
+        int T = 64; // sequence length 64 (i.e. each sequence is 64 tokens nint). must be <= maxT, which is 1024 for GPT-2
+        using DataLoader trainLoader = new(train_tokens, B, T);
+        Log($"Train dataset BatchCount: {trainLoader.BatchCount}");
 
-        using DataLoader val_loader = new(val_tokens, B, T);
-        Log($"val dataset num_batches: {val_loader.num_batches}");
-        int val_num_batches = 10;
+        using DataLoader validLoader = new(val_tokens, B, T);
+        Log($"Valid dataset BatchCount: {validLoader.BatchCount}");
+        int validBatchCount = 10;
 
         // some memory for generating samples from the model
         ulong rng_state = 1337;
@@ -66,24 +66,29 @@ internal static partial class Gpt2
         var llm = CreateTimeLlm(llmToUse);
         for (int step = 0; step <= 20; step++)
         {
-
             // once in a while estimate the validation loss
             if (step % 10 == 0)
             {
-                float val_loss = 0.0f;
-                val_loader.dataloader_reset();
-                for (int i = 0; i < val_num_batches; i++)
+                float validLoss = 0.0f;
+                validLoader.Reset();
+                for (int i = 0; i < validBatchCount; i++)
                 {
-                    val_loader.dataloader_next_batch();
-                    Forward(&model, val_loader.inputs, val_loader.targetTokenIndices, B, T, llm);
-                    val_loss += model.mean_loss;
+                    validLoader.NextBatch();
+                    var valildBatchLoss = Forward(ref model, validLoader.InputTokenIndices, validLoader.TargetTokenIndices, B, T, llm);
+                    validLoss += valildBatchLoss;
                 }
-                val_loss /= val_num_batches;
-                Log($"val loss {val_loss}");
+                validLoss /= validBatchCount;
+                Log($"Valid loss {validLoss}");
             }
 
+            // do a training step
+            // TODO: Abstract loader and add to step perhaps and part of timings)
+            trainLoader.NextBatch();
+            var (loss, timings) = TrainStep(ref model, trainLoader.InputTokenIndices, trainLoader.TargetTokenIndices, B, T, llm, step);
+            Log($"step {step}: train loss {loss} ({timings.ToReport()})");
+
             // once in a while do model inference to print generated text
-            if (step > 0 && step % 20 == 0)
+            if (step > 0 && step % 10 == 0)
             {
                 gen_tokens[0] = GPT2_EOT; // the GPT-2 EOT token kicks off the generation
                 for (int t = 1; t < gen_max_length; t++)
@@ -92,32 +97,21 @@ internal static partial class Gpt2
                     // for each t, we re-compute all activations between 0 and t
                     // leaving this alone because you want separate code for inference anyway
                     // the inference here is just for sanity checking purposes
-                    Forward(&model, gen_tokens, null, 1, t, llm);
-                    float* probabilities = model.acts.probabilities + (t - 1) * model.config.vocab_size;
+                    Forward(ref model, gen_tokens, null, 1, t, llm);
+                    float* probabilities = model.Outputs.probabilities + (t - 1) * model.Config.VocabularySize;
                     float coin = random_f32(&rng_state);
-                    int next_token = sample_mult(probabilities, model.config.vocab_size, coin);
+                    int next_token = sample_mult(probabilities, model.Config.VocabularySize, coin);
                     gen_tokens[t] = next_token;
                 }
                 Log("generated: ");
                 for (int t = 0; t < gen_max_length; t++)
                 {
-                    Log($"{gen_tokens[t]} ");
+                    LogNoNewLine($"{gen_tokens[t]} ");
                 }
                 Log("");
             }
-
-            // do a training step
-            stopwatch.Restart();
-            train_loader.dataloader_next_batch();
-            Forward(&model, train_loader.inputs, train_loader.targetTokenIndices, B, T, llm);
-            ZeroGrad(&model, llm);
-            Backward(&model, llm);
-            Update(&model, 1e-4f, 0.9f, 0.999f, 1e-8f, 0.0f, step + 1, llm);
-            double time_elapsed_ms = stopwatch.Elapsed.TotalMilliseconds;
-            Log($"step {step}: train loss {model.mean_loss} (took {time_elapsed_ms} ms)");
         }
 
-        // free
-        Free(&model);
+        Free(ref model);
     }
 }
