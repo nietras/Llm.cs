@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace nietras.LargeLanguageModel;
@@ -146,7 +147,12 @@ internal unsafe class TimeLlm(ILlm llm)
     public void Zero(float* output, nint count)
     {
         using var _ = NewTimer();
-        Gpt2.memset(output, count);
+        Clear(output, count);
+    }
+
+    unsafe static void Clear<T>(T* ptr, nint size) where T : unmanaged
+    {
+        NativeMemory.Clear(ptr, (nuint)(size * sizeof(T)));
     }
 
     internal string CreateReport(int steps)

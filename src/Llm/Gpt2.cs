@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
-using System.Runtime.InteropServices;
 
 namespace nietras.LargeLanguageModel;
 
@@ -20,35 +20,64 @@ internal static partial class Gpt2
     // ----------------------------------------------------------------------------
     // GPT-2 model definition
     // ----------------------------------------------------------------------------
-    public unsafe struct GPT2
-    {
-        public GPT2() { }
+    // the GPT-2 end-of-text token id
+    const int EndOfTextTokenIndex = 50256;
 
-        public GPT2Config Config;
+    public sealed class Model(Config config) : IDisposable
+    {
+        public Config Config { get; } = config;
 
         // weights (parameters) of the model, and their sizes
-        public ParameterTensors Parameters;
-        public nint[] ParameterSizes = new nint[ParameterTensorCount];
-        public nint ParameterCount;
+        public ParameterTensors Parameters { get; } = ParameterTensors.Create(config);
         // gradients of the weights (parameters)
-        public ParameterTensors ParameterGradients;
+        public ParameterTensors? ParameterGradients { get; set; } = null;
         // buffers for the AdamW optimizer
-        public float* m_memory;
-        public float* v_memory;
+        public OptimizerTensors? OptimizerStates { get; set; } = null;
 
-        // activations of the model, and their sizes
-        public OutputTensors Outputs;
-        public nint[] OutputSizes = new nint[OutputTensorCount];
-        public nint OutputCount;
+        // outputs of the model, and their sizes
+        public OutputTensors? Outputs { get; set; } = null;
         // gradients of the outputs
-        public OutputTensors OutputGradients;
+        public OutputTensors? OutputGradients { get; set; } = null;
 
         // other run state configuration
-        public int Batchsize; // the batch size (B) of current forward pass
-        public int TokenCount; // the sequence length (T) of current forward pass
+        public int Batchsize = 0; // the batch size (B) of current forward pass
+        public int TokenCount = 0; // the sequence length (T) of current forward pass
+
+        [MemberNotNull(nameof(Outputs))]
+        public void EnsureOutputMemory(int B, int T)
+        {
+            // allocate space for all the outputs if needed (done here, lazily)
+            if (Outputs is null)
+            {
+                // record the current B,T as well
+                Batchsize = B;
+                TokenCount = T;
+                Outputs = OutputTensors.Create(B, T, Config);
+                Log($"OutputCount: {Outputs.TotalCount}");
+            }
+            else
+            {
+                // validate B,T is no larger than what was previously allocated
+                // in principle, we could re-allocate a larger chunk of memory, for now we just error output
+                if (B > Batchsize || T > TokenCount)
+                {
+                    throw new InvalidDataException("Batch size or token count is inadequately large" +
+                        $"Model: B={Batchsize} T={TokenCount}, Desired: B={B} T={T}");
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            Parameters.Dispose();
+            ParameterGradients?.Dispose();
+            OptimizerStates?.Dispose();
+            Outputs?.Dispose();
+            OutputGradients?.Dispose();
+        }
     }
 
-    public unsafe struct GPT2Config
+    public record Config
     {
         public int MaxTokenCount; // max sequence length, e.g. 1024
         public int VocabularySize; // vocab size, e.g. 50257
@@ -57,64 +86,83 @@ internal static partial class Gpt2
         public int ChannelCount; // number of channels, e.g. 768
     }
 
-    unsafe interface ITensorPtrs { public float* MemoryPtr { get; } }
-
-    const int ParameterTensorCount = 16;
-    [StructLayout(LayoutKind.Sequential)]
-    public unsafe struct ParameterTensors : ITensorPtrs
+    public sealed class ParameterTensors(Config c, object s) : Tensors<float>(s)
     {
-        public float* MemoryPtr => wte;
+        public static ParameterTensors Create(Config c)
+            => Create<ParameterTensors>(s => new(c, s));
 
-        public float* wte; // (V, C)
-        public float* wpe; // (maxT, C)
-        public float* ln1w; // (L, C)
-        public float* ln1b; // (L, C)
-        public float* qkvw; // (L, 3*C, C)
-        public float* qkvb; // (L, 3*C)
-        public float* attprojw; // (L, C, C)
-        public float* attprojb; // (L, C)
-        public float* ln2w; // (L, C)
-        public float* ln2b; // (L, C)
-        public float* fcw; // (L, 4*C, C)
-        public float* fcb; // (L, 4*C)
-        public float* fcprojw; // (L, C, 4*C)
-        public float* fcprojb; // (L, C)
-        public float* lnfw; // (C)
-        public float* lnfb; // (C)
+        // Implicitly depends on property initialization following declared
+        // order of properties.
+
+        public Tensor<float> TokenEmbeddings { get; } = New([c.VocabularySize, c.ChannelCount], s);
+        public Tensor<float> PositionEmbeddings { get; } = New([c.MaxTokenCount, c.ChannelCount], s);
+
+        public Tensor<float> LayerNorm1Weights { get; } = New([c.LayerCount, c.ChannelCount], s);
+        public Tensor<float> LayerNorm1Bias { get; } = New([c.LayerCount, c.ChannelCount], s);
+
+        public Tensor<float> QKVWeights { get; } = New([c.LayerCount, 3 * c.ChannelCount, c.ChannelCount], s);
+        public Tensor<float> QKVBias { get; } = New([c.LayerCount, 3 * c.ChannelCount], s);
+
+        public Tensor<float> AttentionProjectionWeights { get; } = New([c.LayerCount, c.ChannelCount, c.ChannelCount], s);
+        public Tensor<float> AttentionProjectionBias { get; } = New([c.LayerCount, c.ChannelCount], s);
+
+        public Tensor<float> LayerNorm2Weights { get; } = New([c.LayerCount, c.ChannelCount], s);
+        public Tensor<float> LayerNorm2Bias { get; } = New([c.LayerCount, c.ChannelCount], s);
+
+        public Tensor<float> FullConnectWeights { get; } = New([c.LayerCount, 4 * c.ChannelCount, c.ChannelCount], s);
+        public Tensor<float> FullConnectBias { get; } = New([c.LayerCount, 4 * c.ChannelCount], s);
+
+        public Tensor<float> FullConnectProjectionWeights { get; } = New([c.LayerCount, c.ChannelCount, 4 * c.ChannelCount], s);
+        public Tensor<float> FullConnectProjectionBias { get; } = New([c.LayerCount, c.ChannelCount], s);
+
+        public Tensor<float> LayerNormFinalWeights { get; } = New([c.ChannelCount], s);
+        public Tensor<float> LayerNormFinalBias { get; } = New([c.ChannelCount], s);
     }
 
-    const int OutputTensorCount = 23;
-    [StructLayout(LayoutKind.Sequential)]
-    public unsafe struct OutputTensors : ITensorPtrs
+    public sealed class OutputTensors(nint L, nint B, nint T, nint C, nint H, nint V, object s) : Tensors<float>(s)
     {
-        public float* MemoryPtr => encoded;
+        public static OutputTensors Create(nint batchSize, nint tokenCount, Config c)
+            => Create<OutputTensors>(s => new(c.LayerCount,
+                batchSize, tokenCount, c.ChannelCount,
+                c.HeadCount, c.VocabularySize, s));
 
-        public float* encoded; // (B, T, C)
-        public float* ln1; // (L, B, T, C)
-        public float* ln1_mean; // (L, B, T)
-        public float* ln1_rstd; // (L, B, T)
-        public float* qkv; // (L, B, T, 3*C)
-        public float* atty; // (L, B, T, C)
-        public float* preatt; // (L, B, NH, T, T)
-        public float* att; // (L, B, NH, T, T)
-        public float* attproj; // (L, B, T, C)
-        public float* residual2; // (L, B, T, C)
-        public float* ln2; // (L, B, T, C)
-        public float* ln2_mean; // (L, B, T)
-        public float* ln2_rstd; // (L, B, T)
-        public float* fch; // (L, B, T, 4*C)
-        public float* fch_gelu; // (L, B, T, 4*C)
-        public float* fcproj; // (L, B, T, C)
-        public float* residual3; // (L, B, T, C)
-        public float* lnf; // (B, T, C)
-        public float* lnf_mean; // (B, T)
-        public float* lnf_rstd; // (B, T)
-        public float* logits; // (B, T, V)
-        public float* probabilities; // (B, T, V)
-        public float* losses; // (B, T)
+        public Tensor<float> Embeded { get; } = New([B, T, C], s);
+
+        public Tensor<float> LayerNorm1 { get; } = New([L, B, T, C], s);
+        public Tensor<float> LayerNorm1Mean { get; } = New([L, B, T], s);
+        public Tensor<float> LayerNorm1InvStdDev { get; } = New([L, B, T], s);
+        public Tensor<float> QueryKeyValue { get; } = New([L, B, T, 3 * C], s);
+        public Tensor<float> Attention { get; } = New([L, B, T, C], s);
+        public Tensor<float> PreAttention { get; } = New([L, B, H, T, T], s);
+        public Tensor<float> PostAttention { get; } = New([L, B, H, T, T], s);
+        public Tensor<float> AttentionProjected { get; } = New([L, B, T, C], s);
+        public Tensor<float> Residual2 { get; } = New([L, B, T, C], s);
+        public Tensor<float> LayerNorm2 { get; } = New([L, B, T, C], s);
+        public Tensor<float> LayerNorm2Mean { get; } = New([L, B, T], s);
+        public Tensor<float> LayerNorm2InvStdDev { get; } = New([L, B, T], s);
+        public Tensor<float> FullyConnected { get; } = New([L, B, T, 4 * C], s);
+        public Tensor<float> FullyConnectedGeLU { get; } = New([L, B, T, 4 * C], s);
+        public Tensor<float> FullyConnectedProjected { get; } = New([L, B, T, C], s);
+        public Tensor<float> Residual3 { get; } = New([L, B, T, C], s);
+
+        public Tensor<float> LayerNormFinal { get; } = New([B, T, C], s);
+        public Tensor<float> LayerNormFinalMean { get; } = New([B, T], s);
+        public Tensor<float> LayerNormFinalInvStdDev { get; } = New([B, T], s);
+        public Tensor<float> Logits { get; } = New([B, T, V], s);
+        public Tensor<float> Probabilities { get; } = New([B, T, V], s);
+        public Tensor<float> Losses { get; } = New([B, T], s);
     }
 
-    public unsafe static void BuildFromCheckpoint(ref GPT2 model, string checkpointFilePath)
+    public sealed class OptimizerTensors(nint parameterCount, object s) : Tensors<float>(s)
+    {
+        public static OptimizerTensors Create(nint parameterCount)
+            => Create<OptimizerTensors>(s => new(parameterCount, s));
+
+        public Tensor<float> M { get; } = New([parameterCount], s);
+        public Tensor<float> V { get; } = New([parameterCount], s);
+    }
+
+    public unsafe static Model ModelFromCheckpoint(string checkpointFilePath)
     {
         // read in model from a checkpoint file
         using var file = File.OpenRead(checkpointFilePath);
@@ -126,154 +174,132 @@ internal static partial class Gpt2
         if (header[1] != 1) { throw new InvalidDataException($"Bad version in model file"); }
 
         // read in hyperparameters
-        int maxT, V, L, NH, C;
-        model.Config.MaxTokenCount = maxT = header[2];
-        model.Config.VocabularySize = V = header[3];
-        model.Config.LayerCount = L = header[4];
-        model.Config.HeadCount = NH = header[5];
-        model.Config.ChannelCount = C = header[6];
-        Log("[GPT-2]");
-        Log($"MaxTokenCount: {maxT}");
-        Log($"VocabularySize: {V}");
-        Log($"LayerCount: {L}");
-        Log($"HeadCount: {NH}");
-        Log($"ChannelCount: {C}");
-
-        // allocate space for all the parameters and read them in
-        model.ParameterSizes[0] = V * C; // wte
-        model.ParameterSizes[1] = maxT * C; // wpe
-        model.ParameterSizes[2] = L * C; // ln1w
-        model.ParameterSizes[3] = L * C; // ln1b
-        model.ParameterSizes[4] = L * (3 * C) * C; // qkvw
-        model.ParameterSizes[5] = L * (3 * C); // qkvb
-        model.ParameterSizes[6] = L * C * C; // attprojw
-        model.ParameterSizes[7] = L * C; // attprojb
-        model.ParameterSizes[8] = L * C; // ln2w
-        model.ParameterSizes[9] = L * C; // ln2b
-        model.ParameterSizes[10] = L * (4 * C) * C; // fcw
-        model.ParameterSizes[11] = L * (4 * C); // fcb
-        model.ParameterSizes[12] = L * C * (4 * C); // fcprojw
-        model.ParameterSizes[13] = L * C; // fcprojb
-        model.ParameterSizes[14] = C; // lnfw
-        model.ParameterSizes[15] = C; // lnfb
-
-        // count the number of paramaters
-        nint parameterCount = 0;
-        for (nint i = 0; i < ParameterTensorCount; i++)
+        var config = new Config()
         {
-            parameterCount += model.ParameterSizes[i];
-        }
-        Log($"ParameterCount: {parameterCount}");
-        model.ParameterCount = parameterCount;
+            MaxTokenCount = header[2],
+            VocabularySize = header[3],
+            LayerCount = header[4],
+            HeadCount = header[5],
+            ChannelCount = header[6],
+        };
+        Log("[GPT-2]");
+        Log($"MaxTokenCount: {config.MaxTokenCount}");
+        Log($"VocabularySize: {config.VocabularySize}");
+        Log($"LayerCount: {config.LayerCount}");
+        Log($"HeadCount: {config.HeadCount}");
+        Log($"ChannelCount: {config.ChannelCount}");
 
+        var model = new Model(config);
         // read in all the parameters from file
-        model.Parameters = AllocateAndSetPointers<ParameterTensors>(model.ParameterSizes);
-        Extensions.ReadExactlyUnmanaged(file, model.Parameters.MemoryPtr, parameterCount);
+        file.ReadExactlyUnmanaged(model.Parameters.MemoryPtr, model.Parameters.TotalCount);
+        Log($"ParameterCount: {model.Parameters.TotalCount}");
 
-        // other inits
-        model.Outputs = default;
-        model.m_memory = null;
-        model.v_memory = null;
-        model.Batchsize = 0;
-        model.TokenCount = 0;
+        return model;
     }
 
-    internal readonly record struct TrainStepTimings(double Total_ms, double Forward_ms, double ZeroGrad_ms, double Backward_ms, double Update_ms);
+    internal readonly record struct TrainStepTimings(double Total_ms,
+        double Forward_ms, double ZeroGrad_ms, double Backward_ms, double Update_ms);
     internal readonly record struct TrainStepResult(float Loss, TrainStepTimings Timings);
 
     static readonly double s_tickstoMs = 1000.0 / Stopwatch.Frequency;
 
     internal static unsafe string ToReport(this TrainStepTimings t)
     {
-        return $"{t.Total_ms,5:F0} ms = Forward {t.Forward_ms,5:F0} ms ZeroGrad {t.ZeroGrad_ms,3:F0} ms Backward {t.Backward_ms,4:F0} ms Update {t.Update_ms,4:F0} ms";
+        return $"{t.Total_ms,5:F0} ms = Forward {t.Forward_ms,5:F0} ms ZeroGrad {t.ZeroGrad_ms,3:F0} ms " +
+               $"Backward {t.Backward_ms,4:F0} ms Update {t.Update_ms,4:F0} ms";
     }
 
-    internal static unsafe TrainStepResult TrainStep(ref GPT2 model,
+    internal static unsafe TrainStepResult TrainStep(Model model,
         int* inputTokenIndices, int* targetTokenIndices, int batchSize, int tokenCount,
         TimeLlm llm, int step)
     {
         var t0 = Stopwatch.GetTimestamp();
-        var loss = Forward(ref model, inputTokenIndices, targetTokenIndices, batchSize, tokenCount, llm);
+        var loss = Forward(model, inputTokenIndices, targetTokenIndices,
+                           batchSize, tokenCount, llm);
         var t1 = Stopwatch.GetTimestamp();
-        ZeroGrad(ref model, llm);
+        ZeroGrad(model, llm);
         var t2 = Stopwatch.GetTimestamp();
-        Backward(ref model, inputTokenIndices, targetTokenIndices, llm);
+        Backward(model, inputTokenIndices, targetTokenIndices, llm);
         var t3 = Stopwatch.GetTimestamp();
-        Update(ref model, learningRate: 1e-4f, beta1: 0.9f, beta2: 0.999f,
+        Update(model, learningRate: 1e-4f, beta1: 0.9f, beta2: 0.999f,
                eps: 1e-8f, weightDecay: 0.01f, step + 1, llm);
         var t4 = Stopwatch.GetTimestamp();
+
         TrainStepTimings timings = new((t4 - t0) * s_tickstoMs,
-            (t1 - t0) * s_tickstoMs, (t2 - t1) * s_tickstoMs, (t3 - t2) * s_tickstoMs, (t4 - t3) * s_tickstoMs);
+            (t1 - t0) * s_tickstoMs, (t2 - t1) * s_tickstoMs,
+            (t3 - t2) * s_tickstoMs, (t4 - t3) * s_tickstoMs);
         return new(loss, timings);
     }
 
-    static unsafe float Forward(ref GPT2 model, int* inputs, int* targetTokenIndices, int B, int T, TimeLlm llm)
+    static unsafe float Forward(Model model, int* inputs,
+        int* targetTokenIndices, int B, int T, TimeLlm llm)
     {
         // targetTokenIndices are optional and could be null
 
         // ensure the model was initialized or error output
         if (model.Parameters.MemoryPtr == null)
         {
-            throw new InvalidOperationException("Error: model was not initialized properly.");
+            throw new InvalidOperationException("Model was not initialized properly.");
         }
 
         // convenience parameters
         int V = model.Config.VocabularySize;
         int L = model.Config.LayerCount;
-        int NH = model.Config.HeadCount;
+        int H = model.Config.HeadCount;
         int C = model.Config.ChannelCount;
 
-        EnsureOutputMemory(ref model, B, T, V, L, NH, C);
+        model.EnsureOutputMemory(B, T);
 
         llm.Part = "0." + nameof(Forward);
         llm.Index = -1;
 
         // forward pass
-        ParameterTensors parameters = model.Parameters; // for brevity
-        OutputTensors acts = model.Outputs;
-        llm.EmbedForward(inputs, parameters.wte, parameters.wpe, B, T, C, acts.encoded); // encoding goes into residual[0]
+        var parameters = model.Parameters; // for brevity
+        var outputs = model.Outputs;
+
+        llm.EmbedForward(inputs, parameters.TokenEmbeddings, parameters.PositionEmbeddings, B, T, C, outputs.Embeded);
         var layersStartIndex = llm.Index;
         for (int l = 0; l < L; l++)
         {
             llm.Index = layersStartIndex;
-            var residual = l == 0 ? acts.encoded : acts.residual3 + (l - 1) * B * T * C;
+            var residual = l == 0 ? outputs.Embeded : outputs.Residual3.StrideToPtrAt(l - 1);
 
             // get the pointers of the weights for this layer
-            float* l_ln1w = parameters.ln1w + l * C;
-            float* l_ln1b = parameters.ln1b + l * C;
-            float* l_qkvw = parameters.qkvw + l * 3 * C * C;
-            float* l_qkvb = parameters.qkvb + l * 3 * C;
-            float* l_attprojw = parameters.attprojw + l * C * C;
-            float* l_attprojb = parameters.attprojb + l * C;
-            float* l_ln2w = parameters.ln2w + l * C;
-            float* l_ln2b = parameters.ln2b + l * C;
-            float* l_fcw = parameters.fcw + l * 4 * C * C;
-            float* l_fcb = parameters.fcb + l * 4 * C;
-            float* l_fcprojw = parameters.fcprojw + l * C * 4 * C;
-            float* l_fcprojb = parameters.fcprojb + l * C;
+            float* l_ln1w = parameters.LayerNorm1Weights.StrideToPtrAt(l);
+            float* l_ln1b = parameters.LayerNorm1Bias.StrideToPtrAt(l);
+            float* l_qkvw = parameters.QKVWeights.StrideToPtrAt(l);
+            float* l_qkvb = parameters.QKVBias.StrideToPtrAt(l);
+            float* l_attprojw = parameters.AttentionProjectionWeights.StrideToPtrAt(l);
+            float* l_attprojb = parameters.AttentionProjectionBias.StrideToPtrAt(l);
+            float* l_ln2w = parameters.LayerNorm2Weights.StrideToPtrAt(l);
+            float* l_ln2b = parameters.LayerNorm2Bias.StrideToPtrAt(l);
+            float* l_fcw = parameters.FullConnectWeights.StrideToPtrAt(l);
+            float* l_fcb = parameters.FullConnectBias.StrideToPtrAt(l);
+            float* l_fcprojw = parameters.FullConnectProjectionWeights.StrideToPtrAt(l);
+            float* l_fcprojb = parameters.FullConnectProjectionBias.StrideToPtrAt(l);
 
-            // get the pointers of the activations for this layer
-            float* l_ln1 = acts.ln1 + l * B * T * C;
-            float* l_ln1_mean = acts.ln1_mean + l * B * T;
-            float* l_ln1_rstd = acts.ln1_rstd + l * B * T;
-            float* l_qkv = acts.qkv + l * B * T * 3 * C;
-            float* l_atty = acts.atty + l * B * T * C;
-            float* l_preatt = acts.preatt + l * B * NH * T * T;
-            float* l_att = acts.att + l * B * NH * T * T;
-            float* l_attproj = acts.attproj + l * B * T * C;
-            float* l_residual2 = acts.residual2 + l * B * T * C;
-            float* l_ln2 = acts.ln2 + l * B * T * C;
-            float* l_ln2_mean = acts.ln2_mean + l * B * T;
-            float* l_ln2_rstd = acts.ln2_rstd + l * B * T;
-            float* l_fch = acts.fch + l * B * T * 4 * C;
-            float* l_fch_gelu = acts.fch_gelu + l * B * T * 4 * C;
-            float* l_fcproj = acts.fcproj + l * B * T * C;
-            float* l_residual3 = acts.residual3 + l * B * T * C;
+            // get the pointers of the outputs for this layer
+            float* l_ln1 = outputs.LayerNorm1.StrideToPtrAt(l);
+            float* l_ln1_mean = outputs.LayerNorm1Mean.StrideToPtrAt(l);
+            float* l_ln1_rstd = outputs.LayerNorm1InvStdDev.StrideToPtrAt(l);
+            float* l_qkv = outputs.QueryKeyValue.StrideToPtrAt(l);
+            float* l_atty = outputs.Attention.StrideToPtrAt(l);
+            float* l_preatt = outputs.PreAttention.StrideToPtrAt(l);
+            float* l_att = outputs.PostAttention.StrideToPtrAt(l);
+            float* l_attproj = outputs.AttentionProjected.StrideToPtrAt(l);
+            float* l_residual2 = outputs.Residual2.StrideToPtrAt(l);
+            float* l_ln2 = outputs.LayerNorm2.StrideToPtrAt(l);
+            float* l_ln2_mean = outputs.LayerNorm2Mean.StrideToPtrAt(l);
+            float* l_ln2_rstd = outputs.LayerNorm2InvStdDev.StrideToPtrAt(l);
+            float* l_fch = outputs.FullyConnected.StrideToPtrAt(l);
+            float* l_fch_gelu = outputs.FullyConnectedGeLU.StrideToPtrAt(l);
+            float* l_fcproj = outputs.FullyConnectedProjected.StrideToPtrAt(l);
+            float* l_residual3 = outputs.Residual3.StrideToPtrAt(l);
 
             // now do the forward pass
             llm.LayerNormForward(residual, l_ln1w, l_ln1b, B, T, C, l_ln1_mean, l_ln1_rstd, l_ln1);
             llm.MatMulForward(l_ln1, l_qkvw, l_qkvb, B, T, C, 3 * C, l_qkv);
-            llm.AttentionForward(l_qkv, B, T, C, NH, l_preatt, l_att, l_atty);
+            llm.AttentionForward(l_qkv, B, T, C, H, l_preatt, l_att, l_atty);
             llm.MatMulForward(l_atty, l_attprojw, l_attprojb, B, T, C, C, l_attproj);
             llm.ResidualForward(residual, l_attproj, B * T * C, l_residual2);
             llm.LayerNormForward(l_residual2, l_ln2w, l_ln2b, B, T, C, l_ln2_mean, l_ln2_rstd, l_ln2);
@@ -282,18 +308,20 @@ internal static partial class Gpt2
             llm.MatMulForward(l_fch_gelu, l_fcprojw, l_fcprojb, B, T, 4 * C, C, l_fcproj);
             llm.ResidualForward(l_residual2, l_fcproj, B * T * C, l_residual3);
         }
-        var lastResidual = acts.residual3 + (L - 1) * B * T * C; // last residual is in residual3
-        llm.LayerNormForward(lastResidual, parameters.lnfw, parameters.lnfb, B, T, C, acts.lnf_mean, acts.lnf_rstd, acts.lnf);
-        llm.MatMulForward(acts.lnf, parameters.wte, null, B, T, C, V, acts.logits);
-        llm.SoftmaxForward(acts.logits, B, T, V, acts.probabilities);
+        // last residual is in residual3
+        var lastResidual = outputs.Residual3.StrideToPtrAt(L - 1);
+        llm.LayerNormForward(lastResidual, parameters.LayerNormFinalWeights, parameters.LayerNormFinalBias, B, T, C,
+                             outputs.LayerNormFinalMean, outputs.LayerNormFinalInvStdDev, outputs.LayerNormFinal);
+        llm.MatMulForward(outputs.LayerNormFinal, parameters.TokenEmbeddings, null, B, T, C, V, outputs.Logits);
+        llm.SoftmaxForward(outputs.Logits, B, T, V, outputs.Probabilities);
 
         // also forward the cross-entropy loss function if we have the targetTokenIndices
         if (targetTokenIndices != null)
         {
-            llm.CrossEntropyForward(model.Outputs.probabilities, targetTokenIndices, B, T, V, model.Outputs.losses);
+            llm.CrossEntropyForward(model.Outputs.Probabilities, targetTokenIndices, B, T, V, model.Outputs.Losses);
             // for convenience also evaluate the mean loss
             float meanLoss = 0.0f;
-            for (int i = 0; i < B * T; i++) { meanLoss += model.Outputs.losses[i]; }
+            for (int i = 0; i < B * T; i++) { meanLoss += model.Outputs.Losses.Ptr[i]; }
             meanLoss /= B * T;
             return meanLoss;
         }
@@ -305,107 +333,106 @@ internal static partial class Gpt2
 
     }
 
-    static unsafe void ZeroGrad(ref GPT2 model, TimeLlm llm)
+    static unsafe void ZeroGrad(Model model, TimeLlm llm)
     {
         llm.Part = "1." + nameof(ZeroGrad);
         llm.Index = -1;
-        if (model.ParameterGradients.MemoryPtr != null) { llm.Zero(model.ParameterGradients.MemoryPtr, model.ParameterCount); }
-        if (model.OutputGradients.MemoryPtr != null) { llm.Zero(model.OutputGradients.MemoryPtr, model.OutputCount); }
+        // lazily allocate the memory for gradients of the weights and outputs
+        model.ParameterGradients ??= ParameterTensors.Create(model.Config);
+        model.OutputGradients ??= OutputTensors.Create(model.Batchsize, model.TokenCount, model.Config);
+        llm.Zero(model.ParameterGradients.MemoryPtr, model.ParameterGradients.TotalCount);
+        llm.Zero(model.OutputGradients.MemoryPtr, model.OutputGradients.TotalCount);
     }
 
-    static unsafe void Backward(ref GPT2 model, int* inputTokenIndices, int* targetTokenIndices, TimeLlm llm)
+    static unsafe void Backward(Model model, int* inputTokenIndices, int* targetTokenIndices, TimeLlm llm)
     {
-        // lazily allocate the memory for gradients of the weights and activations, if needed
-        if (model.ParameterGradients.MemoryPtr == null)
-        {
-            model.ParameterGradients = AllocateAndSetPointers<ParameterTensors>(model.ParameterSizes);
-            model.OutputGradients = AllocateAndSetPointers<OutputTensors>(model.OutputSizes);
-            ZeroGrad(ref model, llm);
-        }
-
         // convenience shortcuts
         int B = model.Batchsize;
         int T = model.TokenCount;
         int V = model.Config.VocabularySize;
         int L = model.Config.LayerCount;
-        int NH = model.Config.HeadCount;
+        int H = model.Config.HeadCount;
         int C = model.Config.ChannelCount;
 
         // backward pass: go in the reverse order of the forward pass, and call backward() functions
-        ParameterTensors parameters = model.Parameters; // for brevity
-        ParameterTensors grads = model.ParameterGradients;
-        OutputTensors acts = model.Outputs;
-        OutputTensors grads_acts = model.OutputGradients;
+        var parameters = model.Parameters; // for brevity
+        var parameterGradients = model.ParameterGradients!;
+        OutputTensors outputs = model.Outputs!;
+        OutputTensors outputGradients = model.OutputGradients!;
 
         // we kick off the chain rule by filling in dlosses with 1.0f/(B*T)
         // technically this is a small, inline backward() pass of calculating
         // total, final loss as the mean over all losses over all (B,T) positions in the batch
-        float dloss_mean = 1.0f / (B * T);
-        for (int i = 0; i < B * T; i++) { grads_acts.losses[i] = dloss_mean; }
+        float δlossMean = 1.0f / (B * T);
+        for (int i = 0; i < B * T; i++) { outputGradients.Losses.Ptr[i] = δlossMean; }
 
         llm.Part = "2." + nameof(Backward);
         llm.Index = -1;
 
-        llm.CrossEntropySoftmaxBackward(grads_acts.losses, acts.probabilities, targetTokenIndices, B, T, V, grads_acts.logits);
-        llm.MatMulBackward(grads_acts.logits, acts.lnf, parameters.wte, B, T, C, V, grads.wte, null, grads_acts.lnf);
-        float* residual = acts.residual3 + (L - 1) * B * T * C; // last layer's residual
-        float* dresidual = grads_acts.residual3 + (L - 1) * B * T * C; // write to last layer's residual
-        llm.LayerNormBackward(grads_acts.lnf, residual, parameters.lnfw, acts.lnf_mean, acts.lnf_rstd, B, T, C, grads.lnfw, grads.lnfb, dresidual);
+        llm.CrossEntropySoftmaxBackward(outputGradients.Losses, outputs.Probabilities, targetTokenIndices, B, T, V,
+                                        outputGradients.Logits);
+        llm.MatMulBackward(outputGradients.Logits, outputs.LayerNormFinal, parameters.TokenEmbeddings, B, T, C, V,
+                           parameterGradients.TokenEmbeddings, null, outputGradients.LayerNormFinal);
+        float* residual = outputs.Residual3.StrideToPtrAt(L - 1); // last layer's residual
+        float* δresidual = outputGradients.Residual3.StrideToPtrAt(L - 1); // write to last layer's residual
+        llm.LayerNormBackward(outputGradients.LayerNormFinal, residual,
+            parameters.LayerNormFinalWeights, outputs.LayerNormFinalMean, outputs.LayerNormFinalInvStdDev, B, T, C,
+            parameterGradients.LayerNormFinalWeights, parameterGradients.LayerNormFinalBias, δresidual);
 
         var layerStartIndex = llm.Index;
         for (int l = L - 1; l >= 0; l--)
         {
             llm.Index = layerStartIndex;
 
-            residual = l == 0 ? acts.encoded : acts.residual3 + (l - 1) * B * T * C;
-            dresidual = l == 0 ? grads_acts.encoded : grads_acts.residual3 + (l - 1) * B * T * C;
+            residual = l == 0 ? outputs.Embeded : outputs.Residual3.StrideToPtrAt(l - 1);
+            δresidual = l == 0 ? outputGradients.Embeded : outputGradients.Residual3.StrideToPtrAt(l - 1);
 
             // get the pointers of the weights for this layer
-            float* l_ln1w = parameters.ln1w + l * C;
-            float* l_qkvw = parameters.qkvw + l * 3 * C * C;
-            float* l_attprojw = parameters.attprojw + l * C * C;
-            float* l_ln2w = parameters.ln2w + l * C;
-            float* l_fcw = parameters.fcw + l * 4 * C * C;
-            float* l_fcprojw = parameters.fcprojw + l * C * 4 * C;
+            float* l_ln1w = parameters.LayerNorm1Weights.StrideToPtrAt(l);
+            float* l_qkvw = parameters.QKVWeights.StrideToPtrAt(l);
+            float* l_attprojw = parameters.AttentionProjectionWeights.StrideToPtrAt(l);
+            float* l_ln2w = parameters.LayerNorm2Weights.StrideToPtrAt(l);
+            float* l_fcw = parameters.FullConnectWeights.StrideToPtrAt(l);
+            float* l_fcprojw = parameters.FullConnectProjectionWeights.StrideToPtrAt(l);
             // get the pointers of the gradients of the weights for this layer
-            float* dl_ln1w = grads.ln1w + l * C;
-            float* dl_ln1b = grads.ln1b + l * C;
-            float* dl_qkvw = grads.qkvw + l * 3 * C * C;
-            float* dl_qkvb = grads.qkvb + l * 3 * C;
-            float* dl_attprojw = grads.attprojw + l * C * C;
-            float* dl_attprojb = grads.attprojb + l * C;
-            float* dl_ln2w = grads.ln2w + l * C;
-            float* dl_ln2b = grads.ln2b + l * C;
-            float* dl_fcw = grads.fcw + l * 4 * C * C;
-            float* dl_fcb = grads.fcb + l * 4 * C;
-            float* dl_fcprojw = grads.fcprojw + l * C * 4 * C;
-            float* dl_fcprojb = grads.fcprojb + l * C;
-            // get the pointers of the activations for this layer
-            float* l_ln1 = acts.ln1 + l * B * T * C;
-            float* l_ln1_mean = acts.ln1_mean + l * B * T;
-            float* l_ln1_rstd = acts.ln1_rstd + l * B * T;
-            float* l_qkv = acts.qkv + l * B * T * 3 * C;
-            float* l_atty = acts.atty + l * B * T * C;
-            float* l_att = acts.att + l * B * NH * T * T;
-            float* l_residual2 = acts.residual2 + l * B * T * C;
-            float* l_ln2 = acts.ln2 + l * B * T * C;
-            float* l_ln2_mean = acts.ln2_mean + l * B * T;
-            float* l_ln2_rstd = acts.ln2_rstd + l * B * T;
-            float* l_fch = acts.fch + l * B * T * 4 * C;
-            float* l_fch_gelu = acts.fch_gelu + l * B * T * 4 * C;
-            // get the pointers of the gradients of the activations for this layer
-            float* dl_ln1 = grads_acts.ln1 + l * B * T * C;
-            float* dl_qkv = grads_acts.qkv + l * B * T * 3 * C;
-            float* dl_atty = grads_acts.atty + l * B * T * C;
-            float* dl_preatt = grads_acts.preatt + l * B * NH * T * T;
-            float* dl_att = grads_acts.att + l * B * NH * T * T;
-            float* dl_attproj = grads_acts.attproj + l * B * T * C;
-            float* dl_residual2 = grads_acts.residual2 + l * B * T * C;
-            float* dl_ln2 = grads_acts.ln2 + l * B * T * C;
-            float* dl_fch = grads_acts.fch + l * B * T * 4 * C;
-            float* dl_fch_gelu = grads_acts.fch_gelu + l * B * T * 4 * C;
-            float* dl_fcproj = grads_acts.fcproj + l * B * T * C;
-            float* dl_residual3 = grads_acts.residual3 + l * B * T * C;
+            float* dl_ln1w = parameterGradients.LayerNorm1Weights.StrideToPtrAt(l);
+            float* dl_ln1b = parameterGradients.LayerNorm1Bias.StrideToPtrAt(l);
+            float* dl_qkvw = parameterGradients.QKVWeights.StrideToPtrAt(l);
+            float* dl_qkvb = parameterGradients.QKVBias.StrideToPtrAt(l);
+            float* dl_attprojw = parameterGradients.AttentionProjectionWeights.StrideToPtrAt(l);
+            float* dl_attprojb = parameterGradients.AttentionProjectionBias.StrideToPtrAt(l);
+            float* dl_ln2w = parameterGradients.LayerNorm2Weights.StrideToPtrAt(l);
+            float* dl_ln2b = parameterGradients.LayerNorm2Bias.StrideToPtrAt(l);
+            float* dl_fcw = parameterGradients.FullConnectWeights.StrideToPtrAt(l);
+            float* dl_fcb = parameterGradients.FullConnectBias.StrideToPtrAt(l);
+            float* dl_fcprojw = parameterGradients.FullConnectProjectionWeights.StrideToPtrAt(l);
+            float* dl_fcprojb = parameterGradients.FullConnectProjectionBias.StrideToPtrAt(l);
+            // get the pointers of the outputs for this layer
+            float* l_ln1 = outputs.LayerNorm1.StrideToPtrAt(l);
+            float* l_ln1_mean = outputs.LayerNorm1Mean.StrideToPtrAt(l);
+            float* l_ln1_rstd = outputs.LayerNorm1InvStdDev.StrideToPtrAt(l);
+            float* l_qkv = outputs.QueryKeyValue.StrideToPtrAt(l);
+            float* l_atty = outputs.Attention.StrideToPtrAt(l);
+            float* l_att = outputs.PostAttention.StrideToPtrAt(l);
+            float* l_residual2 = outputs.Residual2.StrideToPtrAt(l);
+            float* l_ln2 = outputs.LayerNorm2.StrideToPtrAt(l);
+            float* l_ln2_mean = outputs.LayerNorm2Mean.StrideToPtrAt(l);
+            float* l_ln2_rstd = outputs.LayerNorm2InvStdDev.StrideToPtrAt(l);
+            float* l_fch = outputs.FullyConnected.StrideToPtrAt(l);
+            float* l_fch_gelu = outputs.FullyConnectedGeLU.StrideToPtrAt(l);
+            // get the pointers of the gradients of the outputs for this layer
+            float* dl_ln1 = outputGradients.LayerNorm1.StrideToPtrAt(l);
+            float* dl_qkv = outputGradients.QueryKeyValue.StrideToPtrAt(l);
+            float* dl_atty = outputGradients.Attention.StrideToPtrAt(l);
+            float* dl_preatt = outputGradients.PreAttention.StrideToPtrAt(l);
+            float* dl_att = outputGradients.PostAttention.StrideToPtrAt(l);
+            float* dl_attproj = outputGradients.AttentionProjected.StrideToPtrAt(l);
+            float* dl_residual2 = outputGradients.Residual2.StrideToPtrAt(l);
+            float* dl_ln2 = outputGradients.LayerNorm2.StrideToPtrAt(l);
+            float* dl_fch = outputGradients.FullyConnected.StrideToPtrAt(l);
+            float* dl_fch_gelu = outputGradients.FullyConnectedGeLU.StrideToPtrAt(l);
+            float* dl_fcproj = outputGradients.FullyConnectedProjected.StrideToPtrAt(l);
+            float* dl_residual3 = outputGradients.Residual3.StrideToPtrAt(l);
 
             // backprop this layer
             llm.ResidualBackward(dl_residual3, B * T * C, dl_residual2, dl_fcproj);
@@ -413,123 +440,37 @@ internal static partial class Gpt2
             llm.GeLUBackward(dl_fch_gelu, l_fch, B * T * 4 * C, dl_fch);
             llm.MatMulBackward(dl_fch, l_ln2, l_fcw, B, T, C, 4 * C, dl_fcw, dl_fcb, dl_ln2);
             llm.LayerNormBackward(dl_ln2, l_residual2, l_ln2w, l_ln2_mean, l_ln2_rstd, B, T, C, dl_ln2w, dl_ln2b, dl_residual2);
-            llm.ResidualBackward(dl_residual2, B * T * C, dresidual, dl_attproj);
+            llm.ResidualBackward(dl_residual2, B * T * C, δresidual, dl_attproj);
             llm.MatMulBackward(dl_attproj, l_atty, l_attprojw, B, T, C, C, dl_attprojw, dl_attprojb, dl_atty);
-            llm.AttentionBackward(dl_atty, l_att, l_qkv, B, T, C, NH, dl_preatt, dl_att, dl_qkv);
+            llm.AttentionBackward(dl_atty, l_att, l_qkv, B, T, C, H, dl_preatt, dl_att, dl_qkv);
             llm.MatMulBackward(dl_qkv, l_ln1, l_qkvw, B, T, C, 3 * C, dl_qkvw, dl_qkvb, dl_ln1);
-            llm.LayerNormBackward(dl_ln1, residual, l_ln1w, l_ln1_mean, l_ln1_rstd, B, T, C, dl_ln1w, dl_ln1b, dresidual);
+            llm.LayerNormBackward(dl_ln1, residual, l_ln1w, l_ln1_mean, l_ln1_rstd, B, T, C, dl_ln1w, dl_ln1b, δresidual);
         }
-        llm.EmbedBackward(grads_acts.encoded, inputTokenIndices, B, T, C, grads.wte, grads.wpe);
+        llm.EmbedBackward(outputGradients.Embeded, inputTokenIndices, B, T, C,
+            parameterGradients.TokenEmbeddings, parameterGradients.PositionEmbeddings);
     }
 
-    public static unsafe void Update(ref GPT2 model,
-        float learningRate, float beta1, float beta2, float eps, float weightDecay, int t, TimeLlm llm)
+    public static unsafe void Update(Model model,
+        float learningRate, float beta1, float beta2,
+        float eps, float weightDecay, int t, TimeLlm llm)
     {
-        // lazily allocate the memory for m_memory and v_memory
-        if (model.m_memory == null)
-        {
-            model.m_memory = calloc<float>(model.ParameterCount);
-            model.v_memory = calloc<float>(model.ParameterCount);
-        }
-        var parameters = model.Parameters.MemoryPtr;
-        var gradients = model.ParameterGradients.MemoryPtr;
-        var ms = model.m_memory;
-        var vs = model.v_memory;
-        var parameterCount = model.ParameterCount;
-
         llm.Part = "3." + nameof(Update);
         llm.Index = -1;
 
+        // lazily allocate the memory for optimizer
+        if (model.OptimizerStates is null)
+        {
+            model.OptimizerStates = OptimizerTensors.Create(model.Parameters.TotalCount);
+            llm.Zero(model.OptimizerStates.MemoryPtr, model.OptimizerStates.TotalCount);
+        }
+        var parameters = model.Parameters.MemoryPtr;
+        var gradients = model.ParameterGradients!.MemoryPtr;
+        var ms = model.OptimizerStates.M.Ptr;
+        var vs = model.OptimizerStates.V.Ptr;
+        var parameterCount = model.Parameters.TotalCount;
+
         llm.AdamW(gradients, ms, vs, parameters, parameterCount,
                   learningRate, beta1, beta2, eps, weightDecay, t);
-    }
-
-    static unsafe TTensorPtrs AllocateAndSetPointers<TTensorPtrs>(ReadOnlySpan<nint> tensorSizes)
-        where TTensorPtrs : unmanaged
-    {
-        ArgumentOutOfRangeException.ThrowIfNotEqual(sizeof(TTensorPtrs),
-            sizeof(float*) * tensorSizes.Length);
-
-        nint totalSize = 0;
-        for (var i = 0; i < tensorSizes.Length; i++)
-        {
-            totalSize += tensorSizes[i];
-        }
-        var memory = malloc<float>(totalSize);
-
-        var tensorPtrs = new TTensorPtrs();
-        var ptrs = (float**)&tensorPtrs;
-        var nextTensorPtr = memory;
-        for (var i = 0; i < tensorSizes.Length; i++)
-        {
-            ptrs[i] = nextTensorPtr;
-            nextTensorPtr += tensorSizes[i];
-        }
-        return tensorPtrs;
-    }
-
-    static unsafe void EnsureOutputMemory(ref GPT2 model, int B, int T, int V, int L, int NH, int C)
-    {
-        // allocate space for all the activations if needed (done here, lazily)
-        if (model.Outputs.MemoryPtr == null)
-        {
-            // record the current B,T as well
-            model.Batchsize = B;
-            model.TokenCount = T;
-            // and now allocate the space
-            model.OutputSizes[0] = B * T * C; // encoded
-            model.OutputSizes[1] = L * B * T * C; // ln1
-            model.OutputSizes[2] = L * B * T;  // ln1_mean
-            model.OutputSizes[3] = L * B * T;  // ln1_rstd
-            model.OutputSizes[4] = L * B * T * 3 * C; // qkv
-            model.OutputSizes[5] = L * B * T * C;  // atty
-            model.OutputSizes[6] = L * B * NH * T * T;  // preatt
-            model.OutputSizes[7] = L * B * NH * T * T;  // att
-            model.OutputSizes[8] = L * B * T * C; // attproj
-            model.OutputSizes[9] = L * B * T * C; // residual2
-            model.OutputSizes[10] = L * B * T * C; // ln2
-            model.OutputSizes[11] = L * B * T; // ln2_mean
-            model.OutputSizes[12] = L * B * T; // ln2_rstd
-            model.OutputSizes[13] = L * B * T * 4 * C; // fch
-            model.OutputSizes[14] = L * B * T * 4 * C; // fch_gelu
-            model.OutputSizes[15] = L * B * T * C; // fcproj
-            model.OutputSizes[16] = L * B * T * C; // residual3
-            model.OutputSizes[17] = B * T * C; // lnf
-            model.OutputSizes[18] = B * T; // lnf_mean
-            model.OutputSizes[19] = B * T; // lnf_rstd
-            model.OutputSizes[20] = B * T * V; // logits
-            model.OutputSizes[21] = B * T * V; // probabilities
-            model.OutputSizes[22] = B * T; // losses
-            nint outputCount = 0;
-            for (nint i = 0; i < OutputTensorCount; i++)
-            {
-                outputCount += model.OutputSizes[i];
-            }
-            model.OutputCount = outputCount;
-            model.Outputs = AllocateAndSetPointers<OutputTensors>(model.OutputSizes);
-
-            Log($"OutputCount: {outputCount}");
-        }
-        else
-        {
-            // validate B,T is no larger than what was previously allocated
-            // in principle, we could re-allocate a larger chunk of memory, for now we just error output
-            if (B > model.Batchsize || T > model.TokenCount)
-            {
-                throw new InvalidDataException("Batch size or token count is inadequately large" +
-                    $"Model: B={model.Batchsize} T={model.TokenCount}, Desired: B={B} T={T}");
-            }
-        }
-    }
-
-    internal static unsafe void Free(ref GPT2 model)
-    {
-        free(model.Parameters.MemoryPtr);
-        free(model.ParameterGradients.MemoryPtr);
-        free(model.m_memory);
-        free(model.v_memory);
-        free(model.Outputs.MemoryPtr);
-        free(model.OutputGradients.MemoryPtr);
     }
 
     // ----------------------------------------------------------------------------
@@ -538,38 +479,41 @@ internal static partial class Gpt2
 
     public unsafe class DataLoader : IDisposable
     {
-        // hyperparameters
-        public readonly int BatchSize;
-        public readonly int TokenCount;
         // input handling and its state
         FileStream _tokensFile;
         readonly long _fileSize;
-        // output memory
+        Ntv<int> _batchMemory;
+
+        // hyperparameters
+        public readonly int BatchSize;
+        public readonly int TokenCount;
+        // output pointers
         public int* BatchTokenIndices;
         public int* InputTokenIndices;
         public int* TargetTokenIndices;
         // convenience variables
         public nint BatchCount;
-        bool _disposedValue;
 
         public DataLoader(string filename, int B, int T)
         {
             BatchSize = B;
             TokenCount = T;
+            var batchTokenCount = B * T + 1;
 
             // open the input file for reading
             _tokensFile = File.OpenRead(filename);
             _fileSize = _tokensFile.Length;
-            if (_fileSize < (B * T + 1) * sizeof(int))
+            // allocate space for B*T + 1 integers to store the inputTokenIndices and targetTokenIndices
+            _batchMemory = new Ntv<int>(batchTokenCount);
+            if (_fileSize < _batchMemory.ByteCount)
             {
-                throw new InvalidDataException($"Error: file size is too small for the batch size and sequence length");
+                throw new InvalidDataException($"File size is too small for the batch size and token count");
             }
 
-            // allocate space for B*T + 1 integers to store the inputTokenIndices and targetTokenIndices
-            BatchTokenIndices = malloc<int>((B * T + 1));
+            BatchTokenIndices = _batchMemory.Ptr;
             InputTokenIndices = BatchTokenIndices;
             TargetTokenIndices = BatchTokenIndices + 1; // targetTokenIndices are shifted by one
-            BatchCount = (nint)(_fileSize / (B * T * sizeof(int)));
+            BatchCount = (nint)((_fileSize - 1) / (B * T * sizeof(int)));
         }
 
         public unsafe void Reset()
@@ -579,38 +523,37 @@ internal static partial class Gpt2
 
         public unsafe void NextBatch()
         {
-            // if we are at the end of the file, loop back to the beginning
-            if (_tokensFile.Position + (BatchSize * TokenCount + 1) * sizeof(int) > _fileSize)
+            // If at the end of the file, loop back to the beginning
+            if (_tokensFile.Position + _batchMemory.ByteCount > _fileSize)
             {
                 _tokensFile.Position = 0;
             }
-            // read the B*T+1 integers from the file into batch
-            _tokensFile.ReadExactlyUnmanaged(BatchTokenIndices, BatchSize * TokenCount + 1);
-            //fread(this.batch, sizeof(int), B * T + 1, this.tokens_file);
-            // advance the current position by B*T integers 
-            //this.current_position += B * T * sizeof(int);
+            // Read the B*T+1 integers from the file into batch
+            _tokensFile.ReadExactlyUnmanaged(_batchMemory.Ptr, _batchMemory.Count);
             // Read +1 more token to get the target and hence have to move back
             _tokensFile.Position -= sizeof(int);
         }
 
-        public unsafe void dataloader_free()
+        public void DisposeManaged()
         {
-            Dispose(true);
+            _tokensFile.Dispose();
+            _tokensFile = null!;
+            _batchMemory.Dispose();
+            _batchMemory = null!;
+            BatchTokenIndices = null;
+            InputTokenIndices = null;
+            TargetTokenIndices = null;
         }
 
+        #region Dispose
         protected virtual void Dispose(bool disposing)
         {
             if (!_disposedValue)
             {
                 if (disposing)
                 {
-                    _tokensFile.Dispose();
-                    _tokensFile = null!;
+                    DisposeManaged();
                 }
-                free(BatchTokenIndices);
-                BatchTokenIndices = null;
-                InputTokenIndices = null;
-                TargetTokenIndices = null;
                 _disposedValue = true;
             }
         }
@@ -621,47 +564,18 @@ internal static partial class Gpt2
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
         }
+        bool _disposedValue;
+        #endregion
     }
-
-
-    // Add the following code to the Llm class
-
-    public unsafe static T* calloc<T>(nint size) where T : unmanaged
-    {
-        var ptr = malloc<T>(size);
-        memset(ptr, size);
-        return ptr;
-    }
-
-    public unsafe static T* malloc<T>(nint size) where T : unmanaged
-    {
-        return (T*)NativeMemory.Alloc((nuint)(size * sizeof(T)));
-    }
-
-    public unsafe static void free<T>(T* ptr) where T : unmanaged
-    {
-        NativeMemory.Free(ptr);
-    }
-
-    public unsafe static void memcpy<T>(T* dest, T* src, nint size) where T : unmanaged
-    {
-        var sizeInBytes = size * sizeof(T);
-        Buffer.MemoryCopy(src, dest, sizeInBytes, sizeInBytes);
-    }
-
-    public unsafe static void memset<T>(T* ptr, nint size) where T : unmanaged
-    {
-        NativeMemory.Clear(ptr, (nuint)(size * sizeof(T)));
-    }
-
 
     // ----------------------------------------------------------------------------
     // sampler
 
-    // the GPT-2 end-of-text token id
-    const int GPT2_EOT = 50256;
-
-    static unsafe uint random_u32(ulong* state)
+    static unsafe float RandomSingle(ulong* state)
+    { // random float32 in [0,1)
+        return (RandomUInt32(state) >> 8) / 16777216.0f;
+    }
+    static unsafe uint RandomUInt32(ulong* state)
     {
         // xorshift rng: https://en.wikipedia.org/wiki/Xorshift#xorshift.2A
         *state ^= *state >> 12;
@@ -669,15 +583,11 @@ internal static partial class Gpt2
         *state ^= *state >> 27;
         return (uint)((*state * 0x2545F4914F6CDD1Dul) >> 32);
     }
-    static unsafe float random_f32(ulong* state)
-    { // random float32 in [0,1)
-        return (random_u32(state) >> 8) / 16777216.0f;
-    }
 
-    static unsafe int sample_mult(float* probabilities, int n, float coin)
+    static unsafe int FindSampleIndex(float* probabilities, int n, float coin)
     {
         // sample index from probabilities (they must sum to 1!)
-        // coin is a random number in [0, 1), usually from random_f32()
+        // coin is a random number in [0, 1), usually from RandomSingle()
         float cdf = 0.0f;
         for (int i = 0; i < n; i++)
         {
