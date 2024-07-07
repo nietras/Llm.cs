@@ -34,7 +34,7 @@
   Face. This means there is no need to run any Python here to get data or
   similar. Clone and run ✅
 * Output should then be something like:
-  ```
+  ```text
   ProcessorCount: 32
   [GPT-2]
   MaxTokenCount: 1024
