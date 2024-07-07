@@ -36,30 +36,29 @@ internal static partial class Gpt2
     public static unsafe void Train(string dataDirectory, ILlm llmToUse)
     {
         // build the GPT-2 model from a checkpoint
-        GPT2 model = new();
-        BuildFromCheckpoint(ref model, dataDirectory + ModelBinaryFileName);
+        using var model = ModelFromCheckpoint(dataDirectory + ModelBinaryFileName);
 
         // build the DataLoaders from tokens files. for now use tiny_shakespeare if available, else tiny_stories
-        var tiny_stories_train = dataDirectory + DataTinyStoriesTrainBinaryFileName;
-        var tiny_stories_val = dataDirectory + DataTinyStoriesValidationBinaryFileName;
-        var tiny_shakespeare_train = dataDirectory + TinyShakespeareTrainBinaryFileName;
-        var tiny_shakespeare_val = dataDirectory + TinyShakespeareValidationBinaryFileName;
-        var train_tokens = File.Exists(tiny_shakespeare_train) ? tiny_shakespeare_train : tiny_stories_train;
-        var val_tokens = File.Exists(tiny_shakespeare_val) ? tiny_shakespeare_val : tiny_stories_val;
-        int B = 4; // batch size 4 (i.e. 4 independent token sequences will be trained on)
-        int T = 64; // sequence length 64 (i.e. each sequence is 64 tokens nint). must be <= maxT, which is 1024 for GPT-2
-        using DataLoader trainLoader = new(train_tokens, B, T);
+        var tinyStoriesTrain = dataDirectory + DataTinyStoriesTrainBinaryFileName;
+        var tinyStoriesValidation = dataDirectory + DataTinyStoriesValidationBinaryFileName;
+        var tinyShakespeareTrain = dataDirectory + TinyShakespeareTrainBinaryFileName;
+        var tinyShakespeareValidation = dataDirectory + TinyShakespeareValidationBinaryFileName;
+        var trainTokens = File.Exists(tinyShakespeareTrain) ? tinyShakespeareTrain : tinyStoriesTrain;
+        var valTokens = File.Exists(tinyShakespeareValidation) ? tinyShakespeareValidation : tinyStoriesValidation;
+        int b = 4; // batch size 4 (i.e. 4 independent token sequences will be trained on)
+        int t = 64; // sequence length 64 (i.e. each sequence is 64 tokens nint). must be <= maxT, which is 1024 for GPT-2
+        using DataLoader trainLoader = new(trainTokens, b, t);
         Log($"Train dataset BatchCount: {trainLoader.BatchCount}");
 
-        using DataLoader validLoader = new(val_tokens, B, T);
+        using DataLoader validLoader = new(valTokens, b, t);
         Log($"Valid dataset BatchCount: {validLoader.BatchCount}");
         int validBatchCount = 10;
 
         // some memory for generating samples from the model
-        ulong rng_state = 1337;
+        ulong randomNumberState = 1337;
         // during inference step we'll generate sequences of this many tokens
-        const int gen_max_length = 64;
-        int* gen_tokens = stackalloc int[gen_max_length];
+        const int maxGeneratedTokenCount = 64;
+        int* generatedTokens = stackalloc int[maxGeneratedTokenCount];
 
         // train
         var stopwatch = new Stopwatch();
@@ -74,8 +73,9 @@ internal static partial class Gpt2
                 for (int i = 0; i < validBatchCount; i++)
                 {
                     validLoader.NextBatch();
-                    var valildBatchLoss = Forward(ref model, validLoader.InputTokenIndices, validLoader.TargetTokenIndices, B, T, llm);
-                    validLoss += valildBatchLoss;
+                    var validBatchLoss = Forward(model, validLoader.InputTokenIndices,
+                        validLoader.TargetTokenIndices, b, t, llm);
+                    validLoss += validBatchLoss;
                 }
                 validLoss /= validBatchCount;
                 Log($"Valid loss {validLoss}");
@@ -84,34 +84,35 @@ internal static partial class Gpt2
             // do a training step
             // TODO: Abstract loader and add to step perhaps and part of timings)
             trainLoader.NextBatch();
-            var (loss, timings) = TrainStep(ref model, trainLoader.InputTokenIndices, trainLoader.TargetTokenIndices, B, T, llm, step);
+            var (loss, timings) = TrainStep(model, trainLoader.InputTokenIndices,
+                trainLoader.TargetTokenIndices, b, t, llm, step);
             Log($"step {step}: train loss {loss} ({timings.ToReport()})");
 
             // once in a while do model inference to print generated text
             if (step > 0 && step % 10 == 0)
             {
-                gen_tokens[0] = GPT2_EOT; // the GPT-2 EOT token kicks off the generation
-                for (int t = 1; t < gen_max_length; t++)
+                // the GPT-2 EOT token kicks off the generation
+                generatedTokens[0] = EndOfTextTokenIndex;
+                for (int ti = 1; ti < maxGeneratedTokenCount; ti++)
                 {
-                    // note that inference is wasteful here because
-                    // for each t, we re-compute all activations between 0 and t
-                    // leaving this alone because you want separate code for inference anyway
-                    // the inference here is just for sanity checking purposes
-                    Forward(ref model, gen_tokens, null, 1, t, llm);
-                    float* probabilities = model.Outputs.probabilities + (t - 1) * model.Config.VocabularySize;
-                    float coin = random_f32(&rng_state);
-                    int next_token = sample_mult(probabilities, model.Config.VocabularySize, coin);
-                    gen_tokens[t] = next_token;
+                    // note that inference is wasteful here because for each t,
+                    // we re-compute all activations between 0 and t leaving
+                    // this alone because you want separate code for inference
+                    // anyway the inference here is just for sanity checking
+                    // purposes
+                    Forward(model, generatedTokens, null, 1, ti, llm);
+                    float* probabilities = model.Outputs!.Probabilities.Ptr + (ti - 1) * model.Config.VocabularySize;
+                    float coin = RandomSingle(&randomNumberState);
+                    int nextToken = FindSampleIndex(probabilities, model.Config.VocabularySize, coin);
+                    generatedTokens[ti] = nextToken;
                 }
                 Log("generated: ");
-                for (int t = 0; t < gen_max_length; t++)
+                for (int ti = 0; ti < maxGeneratedTokenCount; ti++)
                 {
-                    LogNoNewLine($"{gen_tokens[t]} ");
+                    LogNoNewLine($"{generatedTokens[ti]} ");
                 }
                 Log("");
             }
         }
-
-        Free(ref model);
     }
 }

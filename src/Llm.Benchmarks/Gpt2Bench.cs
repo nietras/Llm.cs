@@ -18,9 +18,10 @@ namespace nietras.LargeLanguageModel.Benchmarks;
 public class Gpt2Bench
 {
     const string DataDirectory = "../../../";
-    GPT2 _model = new();
-    ExpectedTensors _expectedInputsOutputs;
-    ParameterTensors _expectedGrads;
+    Model _model = null!;
+    ExpectedTokenTensors _expectedTokens = null!;
+    ExpectedOutputTensors _expectedOutputs = null!;
+    ParameterTensors _expectedGrads = null!;
     TimeLlm? _llm;
     int _step;
 
@@ -35,9 +36,10 @@ public class Gpt2Bench
             DataDirectory, t => Trace.WriteLine(t));
 
         // build the GPT-2 model from a checkpoint
-        BuildFromCheckpoint(ref _model, DataDirectory + ModelBinaryFileName);
+        _model = ModelFromCheckpoint(DataDirectory + ModelBinaryFileName);
 
-        (_expectedInputsOutputs, _expectedGrads) = ReadExpectedState(_model, DataDirectory);
+        (_expectedTokens, _expectedOutputs, _expectedGrads) =
+            ReadExpectedState(_model, DataDirectory);
 
         var llm = LlmFactory.NameToCreate[Name]();
         _llm = new TimeLlm(llm);
@@ -47,9 +49,9 @@ public class Gpt2Bench
     [Benchmark]
     public unsafe float Train()
     {
-        var (loss, t) = TrainStep(ref _model,
-            _expectedInputsOutputs.InputTokenIndices, _expectedInputsOutputs.OutputTokenIndices,
-            _expectedInputsOutputs.BatchSize, _expectedInputsOutputs.TokenCount,
+        var (loss, t) = TrainStep(_model,
+            _expectedTokens.InputTokenIndices, _expectedTokens.OutputTokenIndices,
+            _expectedTokens.BatchSize, _expectedTokens.TokenCount,
             _llm!, _step);
         ++_step;
         return loss;
@@ -58,11 +60,9 @@ public class Gpt2Bench
     [GlobalCleanup]
     public unsafe void GlobalCleanup()
     {
-        free(_expectedInputsOutputs.InputTokenIndices);
-        free(_expectedInputsOutputs.OutputTokenIndices);
-        free(_expectedInputsOutputs.ExpectedLogits);
-        free(_expectedInputsOutputs.ExpectedLoss);
-        free(_expectedGrads.MemoryPtr);
-        Free(ref _model);
+        _expectedTokens.Dispose();
+        _expectedOutputs.Dispose();
+        _expectedGrads.Dispose();
+        _model.Dispose();
     }
 }

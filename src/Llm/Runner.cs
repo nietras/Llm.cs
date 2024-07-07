@@ -26,7 +26,7 @@ public static class Runner
         using var logWriter = new StreamWriter(logFilePath);
         Action<string> newLog = t => { log(t); logWriter.WriteLine(t); };
 
-        const int steps = 5;
+        const int steps = 10;
         Gpt2.Test(dataDirectory, llm, steps, newLog);
         //Gpt2.Train(dataDirectory, llm);
     }
