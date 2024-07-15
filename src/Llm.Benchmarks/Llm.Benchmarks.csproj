@@ -20,7 +20,7 @@
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.13.12" />
     <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.13.12" />
-    <PackageReference Include="Sep" Version="0.5.2" />
+    <PackageReference Include="Sep" Version="0.5.3" />
   </ItemGroup>
   
 </Project>
