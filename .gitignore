@@ -11,7 +11,9 @@
 *.userprefs
 
 # Build results
-artifacts/
+artifacts/*
+# Include gpt2 tokenizer vocabulary
+!artifacts/gpt2.tiktoken
 Build_*/
 [Dd]ebug/
 [Dd]ebugPublic/

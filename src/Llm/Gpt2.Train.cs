@@ -6,11 +6,12 @@ namespace nietras.LargeLanguageModel;
 
 #pragma warning disable IDE0007 // Use implicit type
 
-internal static partial class Gpt2
+static partial class Gpt2
 {
     internal const string ModelBinaryFileName = "gpt2_124M.bin";
     internal const string ModelDebugBinaryFileName = "gpt2_124M_debug_state.bin";
 
+    internal const string TokenizerTiktokenFileName = "gpt2.tiktoken";
     internal const string TokenizerBinaryFileName = "gpt2_tokenizer.bin";
 
     internal const string DataTinyStoriesTrainBinaryFileName = "TinyStories_train.bin";
@@ -37,6 +38,8 @@ internal static partial class Gpt2
     {
         // build the GPT-2 model from a checkpoint
         using var model = ModelFromCheckpoint(dataDirectory + ModelBinaryFileName);
+
+        var tokenizer = Bpe.ReadGpt2FromTiktokenFile(dataDirectory + TokenizerTiktokenFileName);
 
         // build the DataLoaders from tokens files. for now use tiny_shakespeare if available, else tiny_stories
         var tinyStoriesTrain = dataDirectory + DataTinyStoriesTrainBinaryFileName;
@@ -65,6 +68,13 @@ internal static partial class Gpt2
         var llm = CreateTimeLlm(llmToUse);
         for (int step = 0; step <= 20; step++)
         {
+            // do a training step
+            // TODO: Abstract loader and add to step perhaps and part of timings)
+            trainLoader.NextBatch();
+            var (loss, timings) = TrainStep(model, trainLoader.InputTokenIndices,
+                trainLoader.TargetTokenIndices, b, t, llm, step);
+            Log($"{step:D2}: train loss {loss:F6} ({timings.ToReport()})");
+
             // once in a while estimate the validation loss
             if (step % 10 == 0)
             {
@@ -78,18 +88,11 @@ internal static partial class Gpt2
                     validLoss += validBatchLoss;
                 }
                 validLoss /= validBatchCount;
-                Log($"Valid loss {validLoss}");
+                Log($"Valid loss: {validLoss}");
             }
 
-            // do a training step
-            // TODO: Abstract loader and add to step perhaps and part of timings)
-            trainLoader.NextBatch();
-            var (loss, timings) = TrainStep(model, trainLoader.InputTokenIndices,
-                trainLoader.TargetTokenIndices, b, t, llm, step);
-            Log($"step {step}: train loss {loss} ({timings.ToReport()})");
-
             // once in a while do model inference to print generated text
-            if (step > 0 && step % 10 == 0)
+            if (step % 10 == 0)
             {
                 // the GPT-2 EOT token kicks off the generation
                 generatedTokens[0] = EndOfTextTokenIndex;
@@ -106,12 +109,13 @@ internal static partial class Gpt2
                     int nextToken = FindSampleIndex(probabilities, model.Config.VocabularySize, coin);
                     generatedTokens[ti] = nextToken;
                 }
-                Log("generated: ");
+                LogNoNewLine("generated: [");
                 for (int ti = 0; ti < maxGeneratedTokenCount; ti++)
                 {
                     LogNoNewLine($"{generatedTokens[ti]} ");
                 }
-                Log("");
+                Log("]");
+                Log($"generated: '{tokenizer.TryDecode(new(generatedTokens, maxGeneratedTokenCount))}'");
             }
         }
     }

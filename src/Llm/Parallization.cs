@@ -136,7 +136,7 @@ static class NotParallel
     }
 }
 
-internal class FixedThreadCountTaskScheduler : TaskScheduler
+class FixedThreadCountTaskScheduler : TaskScheduler
 {
     readonly int _threadCount;
     readonly ConcurrentQueue<Task> _taskQueue = new();
@@ -184,7 +184,7 @@ internal class FixedThreadCountTaskScheduler : TaskScheduler
         //return _taskQueue.TryDequeue(out task);
     }
 
-    private void ExecuteTasks()
+    void ExecuteTasks()
     {
         while (!_stopRequested)
         {

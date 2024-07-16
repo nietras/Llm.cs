@@ -7,7 +7,7 @@ namespace nietras.LargeLanguageModel;
 
 #pragma warning disable IDE0007 // Use implicit type
 
-internal static partial class Gpt2
+static partial class Gpt2
 {
     public class ExpectedTokenTensors(int B, int T, object s) : Tensors<int>(s)
     {
