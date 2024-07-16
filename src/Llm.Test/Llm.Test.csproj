@@ -22,5 +22,14 @@
     <PackageReference Include="PublicApiGenerator" Version="11.1.0" />
     <PackageReference Include="MSTest" Version="3.4.3" />
   </ItemGroup>
+  
+  <ItemGroup>
+    <None Update="lib.rs.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="lib.rs.tokens_gpt2.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 
 </Project>

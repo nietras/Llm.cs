@@ -8,7 +8,7 @@ using System.Text;
 
 namespace nietras.LargeLanguageModel;
 
-internal unsafe class TimeLlm(ILlm llm)
+unsafe class TimeLlm(ILlm llm)
 {
     readonly SortedDictionary<TimeKey, List<long>> _keyToTimes = [];
     readonly ILlm _llm = llm;

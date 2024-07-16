@@ -44,7 +44,7 @@ public sealed unsafe class Tensor<T>(GetPtr<T> ptr, nint offset, nint[] lengths,
     public static implicit operator T*(Tensor<T> t) => t.Ptr;
 #pragma warning restore CA1062 // Validate arguments of public methods
 
-    private string DebuggerDisplay => $"{Name} {Lengths.ToShapeText()}={Count:D}";
+    string DebuggerDisplay => $"{Name} {Lengths.ToShapeText()}={Count:D}";
 }
 
 public unsafe class Tensors<T>(object s)
@@ -133,7 +133,7 @@ public unsafe class Tensors<T>(object s)
 
 
 [DebuggerDisplay("Count = {Count} ByteCount = {ByteCount} Ptr = {IntPtr}")]
-internal unsafe class Ntv<T> : SafeHandleZeroOrMinusOneIsInvalid
+unsafe class Ntv<T> : SafeHandleZeroOrMinusOneIsInvalid
     where T : unmanaged
 {
     const int Alignment = 64;

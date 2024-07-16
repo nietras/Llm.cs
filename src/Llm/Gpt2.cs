@@ -7,7 +7,7 @@ namespace nietras.LargeLanguageModel;
 
 #pragma warning disable IDE0007 // Use implicit type
 
-internal static partial class Gpt2
+static partial class Gpt2
 {
     static readonly Action<string> Log = t => { Console.WriteLine(t); Trace.WriteLine(t); };
     static readonly Action<string> LogNoNewLine = t => { Console.Write(t); Trace.Write(t); };
@@ -21,7 +21,7 @@ internal static partial class Gpt2
     // GPT-2 model definition
     // ----------------------------------------------------------------------------
     // the GPT-2 end-of-text token id
-    const int EndOfTextTokenIndex = 50256;
+    const int EndOfTextTokenIndex = Bpe.Gpt2EndOfTextTokenIndex;
 
     public sealed class Model(Config config) : IDisposable
     {

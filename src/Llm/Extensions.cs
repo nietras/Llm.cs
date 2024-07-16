@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 
 namespace nietras.LargeLanguageModel;
 
-internal static class Extensions
+static class Extensions
 {
     public static unsafe void ReadExactlyUnmanaged<T>(this FileStream file, Span<T> values)
         where T : unmanaged
