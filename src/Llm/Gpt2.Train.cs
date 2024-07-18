@@ -23,7 +23,7 @@ static partial class Gpt2
     internal static readonly IReadOnlyList<string> FileNames = [
         ModelBinaryFileName,
         ModelDebugBinaryFileName,
-        TokenizerBinaryFileName,
+        //TokenizerBinaryFileName,
         //DataTinyStoriesTrainBinaryFileName,
         //DataTinyStoriesValidationBinaryFileName,
         TinyShakespeareTrainBinaryFileName,
