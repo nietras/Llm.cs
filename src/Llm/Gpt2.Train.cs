@@ -49,7 +49,7 @@ static partial class Gpt2
         var trainTokens = File.Exists(tinyShakespeareTrain) ? tinyShakespeareTrain : tinyStoriesTrain;
         var valTokens = File.Exists(tinyShakespeareValidation) ? tinyShakespeareValidation : tinyStoriesValidation;
         int b = 4; // batch size 4 (i.e. 4 independent token sequences will be trained on)
-        int t = 64; // sequence length 64 (i.e. each sequence is 64 tokens nint). must be <= maxT, which is 1024 for GPT-2
+        int t = 64; // sequence length 64 (i.e. each sequence is 64 tokens int). must be <= maxT, which is 1024 for GPT-2
         using DataLoader trainLoader = new(trainTokens, b, t);
         Log($"Train dataset BatchCount: {trainLoader.BatchCount}");
 

@@ -42,29 +42,31 @@ static partial class Gpt2
         // other run state configuration
         public int Batchsize = 0; // the batch size (B) of current forward pass
         public int TokenCount = 0; // the sequence length (T) of current forward pass
+        public int MaxTokenCount = 0; // the max token count in output tensors
 
         [MemberNotNull(nameof(Outputs))]
-        public void EnsureOutputMemory(int B, int T)
+        public void EnsureOutputMemory(int B, int T, int maxT)
         {
             // allocate space for all the outputs if needed (done here, lazily)
             if (Outputs is null)
             {
-                // record the current B,T as well
-                Batchsize = B;
-                TokenCount = T;
-                Outputs = OutputTensors.Create(B, T, Config);
-                Log($"OutputCount: {Outputs.TotalCount}");
+                Outputs = OutputTensors.Create(B, maxT, Config);
+                MaxTokenCount = maxT;
+                Log($"OutputCount: {Outputs.TotalCount} (allocated based on max token count {maxT})");
             }
             else
             {
                 // validate B,T is no larger than what was previously allocated
                 // in principle, we could re-allocate a larger chunk of memory, for now we just error output
-                if (B > Batchsize || T > TokenCount)
+                if (B > Batchsize || T > MaxTokenCount)
                 {
                     throw new InvalidDataException("Batch size or token count is inadequately large" +
-                        $"Model: B={Batchsize} T={TokenCount}, Desired: B={B} T={T}");
+                        $"Model: B={Batchsize} MaxT={MaxTokenCount}, Desired: B={B} T={T}");
                 }
             }
+            // record the current B,T (TODO: REVISE)
+            Batchsize = B;
+            TokenCount = T;
         }
 
         public void Dispose()
@@ -232,7 +234,7 @@ static partial class Gpt2
     }
 
     static unsafe float Forward(Model model, int* inputs,
-        int* targetTokenIndices, int B, int T, TimeLlm llm)
+        int* targetTokenIndices, int B, int T, TimeLlm llm, int? allocateTokenCount = null)
     {
         // targetTokenIndices are optional and could be null
 
@@ -248,7 +250,8 @@ static partial class Gpt2
         int H = model.Config.HeadCount;
         int C = model.Config.ChannelCount;
 
-        model.EnsureOutputMemory(B, T);
+        allocateTokenCount ??= T;
+        model.EnsureOutputMemory(B, T, allocateTokenCount.Value);
 
         llm.Part = "0." + nameof(Forward);
         llm.Index = -1;
