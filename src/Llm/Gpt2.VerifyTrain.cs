@@ -30,7 +30,7 @@ static partial class Gpt2
         public Tensor<float> ExpectedLogits { get; } = New([B, T, V], s);
     }
 
-    public static unsafe void Test(string dataDirectory, ILlm llmToUse, int steps, Action<string>? log)
+    public static unsafe void VerifyTrain(string dataDirectory, ILlm llmToUse, int steps, Action<string>? log)
     {
         // build the GPT-2 model from a checkpoint
         using var model = ModelFromCheckpoint(dataDirectory + ModelBinaryFileName);
