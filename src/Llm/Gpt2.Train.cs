@@ -12,7 +12,6 @@ static partial class Gpt2
     internal const string ModelDebugBinaryFileName = "gpt2_124M_debug_state.bin";
 
     internal const string TokenizerTiktokenFileName = "gpt2.tiktoken";
-    internal const string TokenizerBinaryFileName = "gpt2_tokenizer.bin";
 
     internal const string DataTinyStoriesTrainBinaryFileName = "TinyStories_train.bin";
     internal const string DataTinyStoriesValidationBinaryFileName = "TinyStories_val.bin";
@@ -23,7 +22,6 @@ static partial class Gpt2
     internal static readonly IReadOnlyList<string> FileNames = [
         ModelBinaryFileName,
         ModelDebugBinaryFileName,
-        //TokenizerBinaryFileName,
         //DataTinyStoriesTrainBinaryFileName,
         //DataTinyStoriesValidationBinaryFileName,
         TinyShakespeareTrainBinaryFileName,

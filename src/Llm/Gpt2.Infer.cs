@@ -46,10 +46,7 @@ static partial class Gpt2
             while (tokenCount < maxTokenCount)
             {
                 // note that inference is wasteful here because for each t,
-                // we re-compute all activations between 0 and t leaving
-                // this alone because you want separate code for inference
-                // anyway the inference here is just for sanity checking
-                // purposes
+                // we re-compute all activations between 0 and t
                 Forward(model, tokenIndices, null, 1, tokenCount, llm, maxTokenCount);
 
                 float* probabilities = model.Outputs!.Probabilities.Ptr + (tokenCount - 1) * model.Config.VocabularySize;
