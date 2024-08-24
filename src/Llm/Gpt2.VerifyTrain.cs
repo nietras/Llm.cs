@@ -30,7 +30,7 @@ static partial class Gpt2
         public Tensor<float> ExpectedLogits { get; } = New([B, T, V], s);
     }
 
-    public static unsafe void VerifyTrain(string dataDirectory, ILlm llmToUse, int steps, Action<string>? log)
+    public static unsafe double VerifyTrain(string dataDirectory, ILlm llmToUse, int steps, Action<string>? log)
     {
         // build the GPT-2 model from a checkpoint
         using var model = ModelFromCheckpoint(dataDirectory + ModelBinaryFileName);
@@ -105,11 +105,13 @@ static partial class Gpt2
             }
             log?.Invoke($"All okay: {allOk}");
 
-            var timeReport = llm.CreateReport(steps - JitAndWarmupCount);
+            var (timeReport, meanStep_ms) = llm.CreateReport(steps - JitAndWarmupCount);
 
             log?.Invoke(timeReport);
 
             if (!allOk) { throw new ArithmeticException($"{llmToUse.GetType().Name} failed {nameof(Gpt2)} train test run, see output for details."); }
+
+            return meanStep_ms;
         }
     }
 

@@ -41,6 +41,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ci", "ci", "{655261D2-06EE-
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Llm.Benchmarks", "src\Llm.Benchmarks\Llm.Benchmarks.csproj", "{690F1276-E1B8-434C-AF45-B8C5BBB66B2A}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Llm.Runner", "src\Llm.Runner\Llm.Runner.csproj", "{5C43627A-0CC5-4222-B759-7469DAFB642C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -59,6 +61,10 @@ Global
 		{690F1276-E1B8-434C-AF45-B8C5BBB66B2A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{690F1276-E1B8-434C-AF45-B8C5BBB66B2A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{690F1276-E1B8-434C-AF45-B8C5BBB66B2A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5C43627A-0CC5-4222-B759-7469DAFB642C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5C43627A-0CC5-4222-B759-7469DAFB642C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5C43627A-0CC5-4222-B759-7469DAFB642C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5C43627A-0CC5-4222-B759-7469DAFB642C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
