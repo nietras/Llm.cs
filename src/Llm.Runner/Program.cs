@@ -20,33 +20,25 @@ var dataDirectory = Path.Combine(location!, "../../../");
 
 log($"{Environment.Version} args: {args.Length}");
 
-// Download the model and tokenizer files if they don't exist
-DownloadBinaryFilesIfNotExists(Gpt2.FileNames, Gpt2.RemoteUrl, dataDirectory, log);
-
 var name = args?.Length > 0 ? args[0] : LlmFactory.DefaultName;
 var llm = LlmFactory.NameToCreate[name]();
+
+// Download the model and tokenizer files if they don't exist
+DownloadBinaryFilesIfNotExists(Gpt2.FileNames, Gpt2.RemoteUrl, dataDirectory, log);
 
 // Log to file too for reference
 var logFilePath = Path.Combine(dataDirectory, $"{name}.log");
 using var logWriter = new StreamWriter(logFilePath);
 Action<string> newLog = t => { log(t); logWriter.WriteLine(t); };
 
-//Gpt2.Infer(dataDirectory, llm, newLog);
 const int steps = 10;
 var meanStep_ms = Gpt2.VerifyTrain(dataDirectory, llm, steps, newLog);
-//Gpt2.Train(dataDirectory, llm);
 var boardName = nameof(Gpt2.VerifyTrain);
+//Gpt2.Infer(dataDirectory, llm, newLog);
+//Gpt2.Train(dataDirectory, llm);
 
-var cpuInfo = HostEnvironmentInfo.GetCurrent().CpuInfo.Value;
-var processorName = ProcessorBrandStringHelper.Prettify(cpuInfo);
-var processorNameInDirectory = processorName
-    .Replace(" Processor", "").Replace(" CPU", "")
-    .Replace(" Graphics", "")
-    .Replace("/", "").Replace("\\", "")
-    .Replace(" ", ".");
-log(processorName);
-
-//var processorNameInDirectory = "AMD.Ryzen.7.PRO.7840U.w.Radeon.780M";
+var processorNameInDirectory = GetProcessorName();
+log(processorNameInDirectory);
 
 var sourceDirectory = GetSourceDirectory();
 var benchmarksDirectory = $"{sourceDirectory}/../../benchmarks/";
@@ -90,22 +82,9 @@ static void UpdateBoardCsv(string name, double mean_ms, string filePathBoard)
 
     var value = (mean_ms, (string[])[name, mean_ms.ToString("F0")]);
 
-    //if ()
     var nameToCols = File.Exists(filePathBoard)
         ? ReadNameToCols(filePathBoard, colNameName, colNameMean, colNames)
         : new() { { name, value } };
-    //var nameToCols = ReadNameToCols(filePathCsv, colNameName, colNameMean, colNames);
-    //if (File.Exists(filePathBoard))
-    //{
-    //    var nameToColsBoard = ReadNameToCols(filePathBoard, colNameName, colNameMean, colNames);
-    //    foreach (var (n, v) in nameToColsBoard)
-    //    {
-    //        if (!nameToCols.ContainsKey(n))
-    //        {
-    //            nameToCols[n] = v;
-    //        }
-    //    }
-    //}
 
     using var writerBoard = Sep.Writer().ToFile(filePathBoard);
     var sorted = nameToCols.Values.OrderBy(v => v.Mean);
@@ -125,4 +104,20 @@ static Dictionary<string, (double Mean, string[] Cols)> ReadNameToCols(
     return reader.Enumerate(r => (Name: r[colNameName].ToString(),
             Mean: r[colNameMean].Parse<double>(), Cols: r[colNames].ToStringsArray()))
         .ToDictionary(t => t.Name, t => (t.Mean, t.Cols));
+}
+
+static string GetProcessorName()
+{
+    var cpuInfo = HostEnvironmentInfo.GetCurrent().CpuInfo.Value;
+    var processorName = ProcessorBrandStringHelper.Prettify(cpuInfo);
+    var processorNameInDirectory = processorName
+        .Replace(" Processor", "").Replace(" CPU", "")
+        .Replace(" Graphics", "")
+        .Replace("/", "").Replace("\\", "")
+        .Replace(" ", ".");
+    // Remove iGPU info
+    var indexOfWith = processorNameInDirectory.LastIndexOf(".w.");
+    if (indexOfWith > 0)
+    { processorNameInDirectory = processorNameInDirectory.Substring(0, indexOfWith); }
+    return processorNameInDirectory;
 }
