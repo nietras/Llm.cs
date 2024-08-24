@@ -1,10 +1,10 @@
 ﻿using System.Globalization;
-using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Exporters;
 using BenchmarkDotNet.Exporters.Csv;
 using BenchmarkDotNet.Loggers;
 using BenchmarkDotNet.Reports;
 using Perfolizer.Horology;
+using Perfolizer.Metrology;
 
 namespace nietras.LargeLanguageModel.Benchmarks;
 
