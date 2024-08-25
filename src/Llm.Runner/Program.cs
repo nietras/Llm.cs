@@ -84,7 +84,8 @@ static void UpdateBoardCsv(string name, double mean_ms, string filePathBoard)
 
     var nameToCols = File.Exists(filePathBoard)
         ? ReadNameToCols(filePathBoard, colNameName, colNameMean, colNames)
-        : new() { { name, value } };
+        : [];
+    nameToCols[name] = value;
 
     using var writerBoard = Sep.Writer().ToFile(filePathBoard);
     var sorted = nameToCols.Values.OrderBy(v => v.Mean);
