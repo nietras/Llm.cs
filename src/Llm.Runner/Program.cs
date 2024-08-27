@@ -94,7 +94,8 @@ static (string[] colNames, (double Mean, string[] Cols)[]) UpdateBoardCsv(
 
     var nameToCols = File.Exists(filePathBoard)
         ? ReadNameToCols(filePathBoard, colNameName, colNameMean, colNames)
-        : new() { { name, value } };
+        : [];
+    nameToCols[name] = value;
 
     using var writerBoard = Sep.Writer().ToFile(filePathBoard);
     var sorted = nameToCols.Values.OrderBy(v => v.Mean).ToArray();
