@@ -46,8 +46,17 @@ var directory = $"{benchmarksDirectory}{processorNameInDirectory}";
 if (!Directory.Exists(directory)) { Directory.CreateDirectory(directory); }
 
 var filePathBoard = Path.Combine(directory, $"{boardName}-Board.csv");
+var filePathBoardMarkdown = Path.Combine(directory, $"{boardName}-Board.md");
 
-UpdateBoardCsv(name, meanStep_ms, filePathBoard);
+var (colNames, sortedBoard) = UpdateBoardCsv(name, meanStep_ms, filePathBoard);
+
+WriteBoardMarkdown(colNames, sortedBoard, filePathBoardMarkdown);
+
+void WriteBoardMarkdown(string[] colNames, (double Mean, string[] Cols)[] sortedBoard, string filePathBoardMarkdown)
+{
+    using var writer = new StreamWriter(filePathBoardMarkdown);
+
+}
 
 static void DownloadBinaryFilesIfNotExists(
     IReadOnlyList<string> fileNames, Func<string, string> toUrl,
@@ -73,7 +82,8 @@ static void DownloadBinaryFilesIfNotExists(
 static string GetSourceDirectory([CallerFilePath] string filePath = "") =>
     Path.GetDirectoryName(filePath)!;
 
-static void UpdateBoardCsv(string name, double mean_ms, string filePathBoard)
+static (string[] colNames, (double Mean, string[] Cols)[]) UpdateBoardCsv(
+    string name, double mean_ms, string filePathBoard)
 {
     const string colNameName = "Name";
     const string colNameMean = "Mean [ms]";
@@ -87,12 +97,13 @@ static void UpdateBoardCsv(string name, double mean_ms, string filePathBoard)
         : new() { { name, value } };
 
     using var writerBoard = Sep.Writer().ToFile(filePathBoard);
-    var sorted = nameToCols.Values.OrderBy(v => v.Mean);
+    var sorted = nameToCols.Values.OrderBy(v => v.Mean).ToArray();
     foreach (var (_, cols) in sorted)
     {
         using var writeRow = writerBoard.NewRow();
         writeRow[colNames].Set(cols);
     }
+    return (colNames, sorted);
 }
 
 static Dictionary<string, (double Mean, string[] Cols)> ReadNameToCols(
