@@ -21,6 +21,7 @@ var dataDirectory = Path.Combine(location!, "../../../");
 log($"{Environment.Version} args: {args.Length}");
 
 var name = args?.Length > 0 ? args[0] : LlmFactory.DefaultName;
+log($"Llm '{name}'");
 var llm = LlmFactory.NameToCreate[name]();
 
 // Download the model and tokenizer files if they don't exist
@@ -52,10 +53,16 @@ var (colNames, sortedBoard) = UpdateBoardCsv(name, meanStep_ms, filePathBoard);
 
 WriteBoardMarkdown(colNames, sortedBoard, filePathBoardMarkdown);
 
-void WriteBoardMarkdown(string[] colNames, (double Mean, string[] Cols)[] sortedBoard, string filePathBoardMarkdown)
+static void WriteBoardMarkdown(string[] colNames, IReadOnlyList<string[]> sortedCols,
+    string filePathBoardMarkdown)
 {
     using var writer = new StreamWriter(filePathBoardMarkdown);
-
+    writer.WriteLine($"|{string.Join("|", colNames.Select(c => c.PadLeft(16)))}|");
+    writer.WriteLine($"|{string.Join("|", colNames.Select(_ => ":").Select(c => c.PadLeft(16, '-')))}|");
+    foreach (var cols in sortedCols)
+    {
+        writer.WriteLine($"|{string.Join("|", cols.Select(c => c.PadLeft(16)))}|");
+    }
 }
 
 static void DownloadBinaryFilesIfNotExists(
@@ -82,7 +89,7 @@ static void DownloadBinaryFilesIfNotExists(
 static string GetSourceDirectory([CallerFilePath] string filePath = "") =>
     Path.GetDirectoryName(filePath)!;
 
-static (string[] colNames, (double Mean, string[] Cols)[]) UpdateBoardCsv(
+static (string[] colNames, string[][] Cols) UpdateBoardCsv(
     string name, double mean_ms, string filePathBoard)
 {
     const string colNameName = "Name";
@@ -104,7 +111,7 @@ static (string[] colNames, (double Mean, string[] Cols)[]) UpdateBoardCsv(
         using var writeRow = writerBoard.NewRow();
         writeRow[colNames].Set(cols);
     }
-    return (colNames, sorted);
+    return (colNames, sorted.Select(v => v.Cols).ToArray());
 }
 
 static Dictionary<string, (double Mean, string[] Cols)> ReadNameToCols(
