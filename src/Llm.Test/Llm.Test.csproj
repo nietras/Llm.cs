@@ -19,8 +19,8 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>-->
-    <PackageReference Include="PublicApiGenerator" Version="11.1.0" />
-    <PackageReference Include="MSTest" Version="3.6.2" />
+    <PackageReference Include="PublicApiGenerator" Version="11.2.0" />
+    <PackageReference Include="MSTest" Version="3.6.4" />
   </ItemGroup>
   
   <ItemGroup>
