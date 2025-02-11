@@ -155,7 +155,7 @@ unsafe class TimeLlm(ILlm llm)
         NativeMemory.Clear(ptr, (nuint)(size * sizeof(T)));
     }
 
-    internal string CreateReport(int steps)
+    internal (string Report, double meanStep_ms) CreateReport(int steps)
     {
         var keyToStats = _keyToTimes.ToDictionary(p => p.Key, p => ComputeStats(p.Value));
         var totalSum_ms = keyToStats.Values.Sum(s => s.Sum_ms);
@@ -183,7 +183,7 @@ unsafe class TimeLlm(ILlm llm)
         {
             sb.AppendLine($"{method,-27} {sum_ms / totalSum_ms,4:P0} sum: {sum_ms,6:F0} [ms] per step: {sum_ms / steps,6:F0} [ms]");
         }
-        return sb.ToString();
+        return (sb.ToString(), totalSum_ms / steps);
     }
 
     static TimeStats ComputeStats(List<long> times)
