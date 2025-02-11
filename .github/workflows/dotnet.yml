@@ -32,7 +32,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
         global-json-file: global.json
     - name: Restore dependencies
@@ -59,7 +59,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
         global-json-file: global.json
     - name: Format verify no changes
@@ -76,7 +76,7 @@ jobs:
       run: |
         git tag v${{ github.event.inputs.version }}
     - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
         global-json-file: global.json
     # No need to define min ver version globally now since only uploading release 
@@ -149,7 +149,7 @@ jobs:
         asset_name: Llm.${{ github.event.inputs.version }}.snupkg
         asset_content_type: application/zip
     - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
         global-json-file: global.json
     - name: Push nupkg package
