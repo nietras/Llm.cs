@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <RootNamespace>nietras.LargeLanguageModel.Test</RootNamespace>
@@ -20,7 +20,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>-->
     <PackageReference Include="PublicApiGenerator" Version="11.4.1" />
-    <PackageReference Include="MSTest" Version="3.7.3" />
+    <PackageReference Include="MSTest" Version="3.8.3" />
   </ItemGroup>
   
   <ItemGroup>
